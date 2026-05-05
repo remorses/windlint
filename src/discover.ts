@@ -9,7 +9,7 @@ export interface DiscoveredFiles {
   templateFiles: string[]
 }
 
-const CSS_EXTENSIONS = ['css', 'scss', 'sass', 'less', 'pcss', 'postcss']
+const CSS_EXTENSIONS = ['css']
 const TEMPLATE_EXTENSIONS = [
   'html',
   'htm',

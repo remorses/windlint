@@ -10,7 +10,6 @@ import { defaultThemeCss } from './template-rename.ts'
 import { spliceChangesIntoString, type StringChange } from './splice.ts'
 
 type DesignSystem = Awaited<ReturnType<typeof __unstable__loadDesignSystem>>
-type AstNode = ReturnType<DesignSystem['compileAstNodes']>[number]['node']
 
 export interface LintOptions {
   /** Project directory to lint. */
@@ -45,7 +44,7 @@ export interface LintResult {
   fixedFiles: number
 }
 
-const CSS_EXTENSIONS = new Set(['css', 'scss', 'sass', 'less', 'pcss', 'postcss'])
+const CSS_EXTENSIONS = new Set(['css'])
 
 export async function lint(options: LintOptions): Promise<LintResult> {
   let { cssFiles, templateFiles, designCssFiles } = await resolveLintFiles(options)
@@ -308,7 +307,11 @@ function getCompiledPropertyKeys(options: { candidate: string; designSystem: Des
   return [...keys]
 }
 
-function collectDeclarationKeys(options: { node: AstNode; context: string[]; keys: Set<string> }) {
+function collectDeclarationKeys(options: {
+  node: ReturnType<DesignSystem['compileAstNodes']>[number]['node']
+  context: string[]
+  keys: Set<string>
+}) {
   let { node, context, keys } = options
   if (node.kind === 'declaration') {
     if (!node.property.startsWith('--')) keys.add(`${context.join('|')}::${node.property}::${node.important}`)
