@@ -5,12 +5,23 @@ import { goke } from 'goke'
 import pc from 'picocolors'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+import { countTokenUsage, formatTokenUsageTable } from './count.ts'
 import { rename } from './rename.ts'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../package.json') as { version: string }
 
 const cli = goke('css-rename')
+
+cli
+  .command('count [path]', 'Count declared project CSS variables used in markup')
+  .example('css-rename count ./my-project')
+  .example('css-rename count .')
+  .action(async (targetPath, _options, { console, process }) => {
+    let base = targetPath ? path.resolve(process.cwd, targetPath) : process.cwd
+    let result = await countTokenUsage({ base })
+    console.log(formatTokenUsageTable(result))
+  })
 
 cli
   .command('<from> <to> [path]', 'Rename a CSS variable/token across a Tailwind project')

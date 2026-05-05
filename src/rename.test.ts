@@ -7,6 +7,7 @@ import { rename } from './rename.ts'
 import { renameCssVariables } from './css-rename.ts'
 import { renameTemplateTokens } from './template-rename.ts'
 import { parseToken } from './token.ts'
+import { countTokenUsage, formatTokenUsageTable } from './count.ts'
 import { execSync } from 'node:child_process'
 
 const FIXTURES_DIR = path.resolve(import.meta.dirname, 'fixtures')
@@ -156,6 +157,32 @@ describe('renameTemplateTokens', () => {
     let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
     expect(result).toMatchInlineSnapshot(
       `"<div class="text-brand-apple/50 bg-brand-apple/80">"`,
+    )
+  })
+
+  test('renames to slash opacity modifier when target includes /n', async () => {
+    let input = `<div class="text-primary-alpha-10 hover:bg-primary-alpha-10 border-primary-alpha-10">`
+    let result = await renameTemplateTokens({
+      content: input,
+      extension: 'html',
+      from: parseToken('color-primary-alpha-10'),
+      to: parseToken('color-primary/10'),
+    })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="text-primary/10 hover:bg-primary/10 border-primary/10">"`,
+    )
+  })
+
+  test('renames arbitrary var candidates to slash opacity utilities', async () => {
+    let input = `<div class="bg-[var(--color-primary-alpha-10)] text-[var(--color-primary-alpha-10)]">`
+    let result = await renameTemplateTokens({
+      content: input,
+      extension: 'html',
+      from: parseToken('color-primary-alpha-10'),
+      to: parseToken('color-primary/10'),
+    })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="bg-primary/10 text-primary/10">"`,
     )
   })
 
@@ -387,5 +414,85 @@ describe('full project rename', () => {
 
     let globalsCssAfter = await fs.readFile(path.join(dir, 'globals.css'), 'utf-8')
     expect(globalsCssAfter).toBe(globalsCssBefore)
+  })
+})
+
+describe('countTokenUsage', () => {
+  test('counts declared project variables used by Tailwind markup candidates and var() references', async () => {
+    let dir = path.join(TMP_DIR, `count-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import "tailwindcss";
+
+@theme {
+  --color-social-apple: #000;
+  --color-social-twitter: #1da1f2;
+  --color-red-500: #f00;
+  --spacing-card: 1rem;
+  --radius-card: 0.75rem;
+  --font-brand: ui-sans-serif;
+  --shadow-button: 0 0 #000;
+  --breakpoint-wide: 90rem;
+  --container-sidebar: 40rem;
+}
+
+@theme inline {
+  --color-brand-accent: var(--brand-accent);
+}
+
+:root {
+  --brand-accent: var(--color-social-apple);
+  --semantic-surface: #fff;
+}
+
+.dark,
+[data-theme='dark'] {
+  --color-social-apple: #fff;
+  --semantic-surface: #000;
+}
+
+.button {
+  --local-gap: 2rem;
+  color: var(--semantic-surface);
+  content: "--not-a-declaration";
+}
+
+@property --motion-duration {
+  syntax: "<time>";
+  inherits: false;
+  initial-value: 150ms;
+}
+
+/* --commented-token: red; */
+`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      `<div class="text-social-apple bg-social-apple hover:border-social-apple wide:p-card max-wide:text-social-twitter @sidebar:flex @max-sidebar:grid ring-[var(--color-social-apple)] text-[var(--semantic-surface)] p-card gap-card rounded-card shadow-button font-brand text-red-500">
+  <span style="color: var(--brand-accent); --inline: var(--semantic-surface); transition-duration: var(--motion-duration)">Apple</span>
+</div>
+`,
+    )
+
+    let result = await countTokenUsage({ base: dir })
+
+    expect(formatTokenUsageTable(result)).toMatchInlineSnapshot(`
+      "| Variable | Uses | Utility suffix |
+      | --- | ---: | --- |
+      | \`--color-social-apple\` | 4 | \`social-apple\` |
+      | \`--spacing-card\` | 3 | \`card\` |
+      | \`--breakpoint-wide\` | 2 | \`wide\` |
+      | \`--container-sidebar\` | 2 | \`sidebar\` |
+      | \`--semantic-surface\` | 2 |  |
+      | \`--brand-accent\` | 1 |  |
+      | \`--color-social-twitter\` | 1 | \`social-twitter\` |
+      | \`--font-brand\` | 1 | \`brand\` |
+      | \`--motion-duration\` | 1 |  |
+      | \`--radius-card\` | 1 | \`card\` |
+      | \`--shadow-button\` | 1 | \`button\` |
+      | \`--color-brand-accent\` | 0 | \`brand-accent\` |
+      | \`--local-gap\` | 0 |  |"
+    `)
   })
 })

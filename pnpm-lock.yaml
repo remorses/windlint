@@ -20,6 +20,9 @@ importers:
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
+      postcss:
+        specifier: ^8.5.13
+        version: 8.5.13
       tailwindcss:
         specifier: ^4.2.4
         version: 4.2.4

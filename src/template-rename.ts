@@ -13,7 +13,7 @@ type DesignSystem = Awaited<ReturnType<typeof __unstable__loadDesignSystem>>
 type Candidate = Parameters<DesignSystem['printCandidate']>[0]
 
 const require = createRequire(import.meta.url)
-const defaultThemeCss = fs.readFileSync(require.resolve('tailwindcss/theme.css'), 'utf-8')
+export const defaultThemeCss = fs.readFileSync(require.resolve('tailwindcss/theme.css'), 'utf-8')
 const designSystemCache = new Map<string, Promise<DesignSystem>>()
 
 /**
@@ -32,8 +32,7 @@ export async function renameTemplateTokens(options: {
   let scanner = new Scanner({})
   let candidates = scanner.getCandidatesWithPositions({ content, extension })
   let designSystem = await getDesignSystem({
-    from,
-    to,
+    tokens: [from, to],
     candidates: candidates.map(({ candidate }) => candidate),
   })
   let changes: StringChange[] = []
@@ -168,7 +167,7 @@ function renameVariants(options: {
   return changed
 }
 
-function candidateUsesCssVar(options: {
+export function candidateUsesCssVar(options: {
   designSystem: DesignSystem
   candidate: ReturnType<DesignSystem['parseCandidate']>[number]
   cssVar: string
@@ -186,14 +185,13 @@ function includesString(value: object | string | null | undefined, needle: strin
   return Object.values(value).some((item) => includesString(item, needle))
 }
 
-function getDesignSystem(options: {
-  from: TokenPair
-  to: TokenPair
+export function getDesignSystem(options: {
+  tokens: TokenPair[]
   candidates: string[]
 }): Promise<DesignSystem> {
-  let { from, to, candidates } = options
+  let { tokens, candidates } = options
   let extraThemeVars = collectVariantThemeVars(candidates)
-  extraThemeVars.push(themeDeclaration(from), themeDeclaration(to))
+  extraThemeVars.push(...tokens.map(themeDeclaration))
 
   let key = extraThemeVars.sort().join('\n')
   let cached = designSystemCache.get(key)
