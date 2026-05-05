@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Page</title>
+</head>
+<body>
+  <div class="flex flex-col gap-4 p-8">
+    <button class="text-social-apple bg-white hover:text-social-apple/80 rounded-lg px-4 py-2">
+      Apple Login
+    </button>
+
+    <button class="bg-social-apple text-white rounded-lg px-4 py-2">
+      Apple Login Filled
+    </button>
+
+    <div class="border-social-apple ring-social-apple shadow-button-focus">
+      Outlined section
+    </div>
+
+    <!-- Should NOT be renamed -->
+    <button class="text-social-twitter bg-social-github">
+      Other brands
+    </button>
+
+    <!-- Arbitrary value with var -->
+    <div class="text-[var(--color-social-apple)] bg-[var(--color-social-apple)]">
+      Arbitrary values
+    </div>
+  </div>
+</body>
+</html>

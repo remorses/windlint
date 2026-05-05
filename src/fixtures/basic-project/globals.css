@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Raw Colors */
+  --color-orange-500: #f97316;
+  --color-orange-700: #c2410c;
+
+  /* Social Colors */
+  --color-social-apple: #000000;
+  --color-social-twitter: #010101;
+  --color-social-github: #24292f;
+
+  /* Semantic Colors */
+  --color-bg-strong-950: var(--color-neutral-950);
+  --color-bg-white-0: var(--color-neutral-0);
+  --color-text-strong-950: var(--color-neutral-950);
+
+  /* Primary */
+  --color-primary-base: var(--color-orange-500);
+  --color-primary-darker: var(--color-orange-700);
+
+  /* Shadows using tokens */
+  --shadow-button-focus: 0 0 0 2px var(--color-bg-white-0), 0 0 0 4px var(--color-social-apple);
+}
+
+.dark {
+  --color-social-apple: #ffffff;
+  --color-social-twitter: #ffffff;
+  --color-bg-strong-950: var(--color-neutral-0);
+}
