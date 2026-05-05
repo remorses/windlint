@@ -13,7 +13,7 @@ import {
 } from './design-system.ts'
 import { discoverFiles, getExtension } from './discover.ts'
 import { spliceChangesIntoString } from './splice.ts'
-import { candidateUsesCssVar, findTemplateCandidateRenameChanges } from './template-rename.ts'
+import { findTemplateCandidateRenameChanges } from './template-rename.ts'
 import { parseToken, type TokenPair } from './token.ts'
 
 export interface InlineOptions {
@@ -78,7 +78,7 @@ export async function inlineToken(options: InlineOptions): Promise<InlineResult>
     if (!content.includes(token.cssVar) && !content.includes(token.utilitySuffix)) continue
 
     let extension = getExtension(file)
-    let { content: inlined, replacements } = await inlineTemplateTextToken({
+    let { content: inlined, replacements } = await inlineTemplateToken({
       content,
       extension,
       token,
@@ -107,84 +107,49 @@ export async function inlineToken(options: InlineOptions): Promise<InlineResult>
   }
 }
 
-async function inlineTemplateTextToken(options: {
+async function inlineTemplateToken(options: {
   content: string
   extension: string
   token: TokenPair
   designSystem: DesignSystem
   utilities: InlineUtilities
 }): Promise<{ content: string; replacements: number }> {
-  let changes = (await findTemplateCandidateRenameChanges({
+  let changes = await findTemplateCandidateRenameChanges({
     content: options.content,
     extension: options.extension,
     from: options.token,
     to: parseToken(options.utilities.targetToken),
-  })).filter((change) =>
-    isNamedTokenCandidate({ candidate: change.candidate, designSystem: options.designSystem, token: options.token }) ||
-    getCustomPropertyInlineUtility({
-      candidate: change.candidate,
-      designSystem: options.designSystem,
-      token: options.token,
-    }) !== undefined,
-  )
+  })
 
   for (let change of changes) {
-    let customPropertyUtility = getCustomPropertyInlineUtility({
-      candidate: change.candidate,
-      designSystem: options.designSystem,
-      token: options.token,
-    })
-    if (customPropertyUtility) {
-      change.replacement = getVariantPrefix(change.candidate) + customPropertyUtility
-      continue
+    if (isNamedTextTokenCandidate({ candidate: change.candidate, designSystem: options.designSystem, token: options.token })) {
+      change.replacement = buildReplacementCandidate({
+        rawCandidate: change.candidate,
+        fontSizeReplacement: change.replacement,
+        utilities: options.utilities,
+      })
     }
-
-    change.replacement = buildReplacementCandidate({
-      rawCandidate: change.candidate,
-      fontSizeReplacement: change.replacement,
-      utilities: options.utilities,
-    })
   }
 
   if (changes.length === 0) return { content: options.content, replacements: 0 }
   return { content: spliceChangesIntoString(options.content, changes), replacements: changes.length }
 }
 
-function isNamedTokenCandidate(options: {
+function isNamedTextTokenCandidate(options: {
   candidate: string
   designSystem: DesignSystem
   token: TokenPair
 }): boolean {
+  if (options.token.namespace !== 'text') return false
   for (let parsed of options.designSystem.parseCandidate(options.candidate)) {
     if (parsed.kind !== 'functional') continue
+    if (parsed.root !== 'text') continue
     if (parsed.value?.kind !== 'named') continue
     if (parsed.value.value !== options.token.utilitySuffix) continue
-    if (!candidateUsesCssVar({ designSystem: options.designSystem, candidate: parsed, cssVar: options.token.cssVar })) continue
     return true
   }
 
   return false
-}
-
-function getCustomPropertyInlineUtility(options: {
-  candidate: string
-  designSystem: DesignSystem
-  token: TokenPair
-}): string | undefined {
-  for (let parsed of options.designSystem.parseCandidate(options.candidate)) {
-    if (parsed.kind !== 'arbitrary') continue
-    if (parsed.property !== options.token.cssVar) continue
-    let root = getCustomPropertyInlineRoot(options.token.namespace)
-    if (!root) return undefined
-    return `${root}-${toArbitraryValue(parsed.value)}`
-  }
-
-  return undefined
-}
-
-function getCustomPropertyInlineRoot(namespace: string): string | undefined {
-  if (namespace === 'text') return 'text'
-  if (namespace === 'radius') return 'rounded'
 }
 
 function getInlineUtilities(options: {

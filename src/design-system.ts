@@ -126,5 +126,8 @@ function stripCssImports(content: string): string {
   root.walkAtRules('apply', (atRule) => {
     atRule.remove()
   })
+  root.walkAtRules('utility', (atRule) => {
+    atRule.remove()
+  })
   return root.toString()
 }

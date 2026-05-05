@@ -251,7 +251,7 @@ describe('renameTemplateTokens', () => {
   test('renames var() in arbitrary values', async () => {
     let input = `<div class="text-[var(--color-social-apple)]">`
     let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
-    expect(result).toMatchInlineSnapshot(`"<div class="text-(--color-brand-apple)">"`)
+    expect(result).toMatchInlineSnapshot(`"<div class="text-brand-apple">"`)
   })
 
   test('does not rename other brands', async () => {
@@ -431,7 +431,7 @@ describe('full project rename', () => {
          --color-bg-strong-950: var(--color-neutral-0);
        }
       diff --git a/page.html b/page.html
-      index 2739088..2c5b5d9 100644
+      index 2739088..3864c80 100644
       --- a/page.html
       +++ b/page.html
       @@ -5,15 +5,15 @@
@@ -458,7 +458,7 @@ describe('full project rename', () => {
        
            <!-- Arbitrary value with var -->
       -    <div class="text-[var(--color-social-apple)] bg-[var(--color-social-apple)]">
-      +    <div class="text-(--color-brand-apple) bg-(--color-brand-apple)">
+      +    <div class="text-brand-apple bg-brand-apple">
              Arbitrary values
            </div>
          </div>
@@ -638,6 +638,35 @@ describe('inlineToken', () => {
     )
   })
 
+  test('inlines text token in JSX className without touching sibling utilities', async () => {
+    let dir = path.join(TMP_DIR, `inline-text-jsx-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+
+@theme {
+  --text-title-h5: 1.5rem;
+  --text-title-h5--font-weight: 500;
+}
+
+@utility animate-setting-tab {
+  @apply data-[state=active]:fade-in-0;
+}
+`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'component.tsx'),
+      `<div className='font-inter-var text-title-h5 text-white/72'>Title</div>`,
+    )
+
+    await inlineToken({ token: 'text-title-h5', base: dir })
+
+    await expect(fs.readFile(path.join(dir, 'component.tsx'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div className='font-inter-var text-2xl font-medium text-white/72'>Title</div>"`,
+    )
+  })
+
   test('can disable approximation and includes tracking and leading metadata', async () => {
     let dir = path.join(TMP_DIR, `inline-text-exact-project-${Date.now()}`)
     await fs.mkdir(dir, { recursive: true })
@@ -702,13 +731,13 @@ describe('inlineToken', () => {
     )
     await fs.writeFile(
       path.join(dir, 'index.html'),
-      `<h1 class="text-title-h1 text-[var(--text-title-h1)] [--text-title-h1:2rem] hover:[--text-title-h1:2.25rem] [font-size:var(--text-title-h1)]">Title</h1>`,
+      `<h1 class="text-title-h1 text-[var(--text-title-h1)] text-(--text-title-h1) [--text-title-h1:2rem] hover:[--text-title-h1:2.25rem] [font-size:var(--text-title-h1)]">Title</h1>`,
     )
 
     await inlineToken({ token: 'text-title-h1', base: dir })
 
     await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
-      `"<h1 class=\"text-6xl font-medium text-[var(--text-title-h1)] text-[2rem] hover:text-[2.25rem] [font-size:var(--text-title-h1)]\">Title</h1>"`,
+      `"<h1 class=\"text-6xl font-medium text-6xl text-6xl text-[2rem] hover:text-[2.25rem] text-6xl\">Title</h1>"`,
     )
   })
 
@@ -723,12 +752,12 @@ describe('inlineToken', () => {
 }
 `,
     )
-    await fs.writeFile(path.join(dir, 'index.html'), `<div class="bg-brand text-brand border-brand">Brand</div>`)
+    await fs.writeFile(path.join(dir, 'index.html'), `<div class="bg-brand text-brand border-brand bg-[var(--color-brand)]/50 [color:var(--color-brand)]">Brand</div>`)
 
     await inlineToken({ token: 'color-brand', base: dir })
 
     await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
-      `"<div class=\"bg-red-500 text-red-500 border-red-500\">Brand</div>"`,
+      `"<div class=\"bg-red-500 text-red-500 border-red-500 bg-red-500/50 text-red-500\">Brand</div>"`,
     )
   })
 

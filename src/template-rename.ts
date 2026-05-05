@@ -122,9 +122,12 @@ function renameCandidate(options: {
       rawCandidate.includes(from.cssVar) &&
       candidateUsesCssVar({ designSystem, candidate: readonlyCandidate, cssVar: from.cssVar })
     ) {
-      if (to.utilityModifier && renameExactArbitraryVarValue({ candidate, from, to })) {
+      if (renameExactArbitraryVarValue({ candidate, from, to })) {
         return designSystem.printCandidate(candidate)
       }
+
+      let arbitraryPropertyReplacement = renameExactArbitraryPropertyVarValue({ rawCandidate, candidate, from, to })
+      if (arbitraryPropertyReplacement) return arbitraryPropertyReplacement
 
       if (to.utilityModifier) return rawCandidate
 
@@ -189,6 +192,43 @@ function renameExactArbitraryVarValue(options: { candidate: Candidate; from: Tok
   candidate.value = { kind: 'named', value: to.utilitySuffix, fraction: null }
   applyTargetModifier({ candidate, to })
   return true
+}
+
+function renameExactArbitraryPropertyVarValue(options: {
+  rawCandidate: string
+  candidate: Candidate
+  from: TokenPair
+  to: TokenPair
+}): string | undefined {
+  let { rawCandidate, candidate, from, to } = options
+  if (candidate.kind !== 'arbitrary') return undefined
+
+  let prefix = getVariantPrefix(rawCandidate)
+
+  if (candidate.property === from.cssVar) {
+    let root = getCustomPropertyInlineRoot(from.namespace)
+    return root ? `${prefix}${root}-[${candidate.value.trim().replace(/\s+/g, '_')}]` : undefined
+  }
+
+  if (candidate.value !== `var(${from.cssVar})`) return undefined
+
+  let root = getArbitraryPropertyUtilityRoot({ property: candidate.property, namespace: from.namespace })
+  return root ? `${prefix}${root}-${to.utilitySuffix}${to.utilityModifier ? `/${to.utilityModifier}` : ''}` : undefined
+}
+
+function getCustomPropertyInlineRoot(namespace: string): string | undefined {
+  if (namespace === 'text') return 'text'
+  if (namespace === 'radius') return 'rounded'
+}
+
+function getArbitraryPropertyUtilityRoot(options: { property: string; namespace: string }): string | undefined {
+  if (options.namespace === 'text' && options.property === 'font-size') return 'text'
+  if (options.namespace === 'color') {
+    if (options.property === 'color') return 'text'
+    if (options.property === 'background-color') return 'bg'
+    if (options.property === 'border-color') return 'border'
+  }
+  if (options.namespace === 'radius' && options.property === 'border-radius') return 'rounded'
 }
 
 function applyTargetModifier(options: { candidate: Candidate; to: TokenPair }) {
@@ -371,6 +411,11 @@ function splitCandidate(candidate: string): string[] {
 
   parts.push(candidate.slice(start))
   return parts
+}
+
+function getVariantPrefix(candidate: string): string {
+  let variants = splitCandidate(candidate).slice(0, -1)
+  return variants.length === 0 ? '' : variants.join(':') + ':'
 }
 
 function isSimpleVariant(variant: string): boolean {
