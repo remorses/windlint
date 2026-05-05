@@ -13,6 +13,13 @@ export const defaultThemeCss = fs.readFileSync(require.resolve('tailwindcss/them
 
 export type DesignSystem = Awaited<ReturnType<typeof __unstable__loadDesignSystem>>
 
+let defaultDesignSystemPromise: Promise<DesignSystem> | undefined
+
+export function loadDefaultDesignSystem(): Promise<DesignSystem> {
+  defaultDesignSystemPromise ??= __unstable__loadDesignSystem(defaultThemeCss)
+  return defaultDesignSystemPromise
+}
+
 export interface ThemeEntry {
   variable: string
   value: string

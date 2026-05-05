@@ -7,6 +7,7 @@ import { converter, parse as parseColor, type Oklch } from 'culori'
 import {
   collectCustomPropertySources,
   getThemeValueMap,
+  loadDefaultDesignSystem,
   loadProjectDesignSystem,
   type CssVariableSource,
   type DesignSystem,
@@ -57,9 +58,11 @@ export async function inlineToken(options: InlineOptions): Promise<InlineResult>
 
   let { cssFiles, templateFiles } = await discoverFiles(base)
   let designSystem = await loadProjectDesignSystem(cssFiles)
+  let defaultDesignSystem = await loadDefaultDesignSystem()
   let customPropertySources = await collectCustomPropertySources(cssFiles)
   let utilities = getInlineUtilities({
     designSystem,
+    defaultDesignSystem,
     customPropertySources,
     token,
     disableApproximation: options.disableApproximation,
@@ -154,11 +157,13 @@ function isNamedTextTokenCandidate(options: {
 
 function getInlineUtilities(options: {
   designSystem: DesignSystem
+  defaultDesignSystem: DesignSystem
   customPropertySources: Map<string, CssVariableSource>
   token: TokenPair
   disableApproximation?: boolean
 }): InlineUtilities {
   let { designSystem, token, disableApproximation } = options
+  let defaultDesignSystem = options.defaultDesignSystem
   let declarations = getResolvedDeclarations({ designSystem, customPropertySources: options.customPropertySources })
   let value = resolveCssValue({ variable: token.cssVar, declarations }) ?? designSystem.resolveThemeValue(token.cssVar)
   if (!value) throw new Error(`${token.cssVar} does not exist in the project Tailwind theme.`)
@@ -167,7 +172,7 @@ function getInlineUtilities(options: {
     return {
       targetToken: disableApproximation
         ? `text-${toArbitraryValue(value)}`
-        : `text-${getClosestDefaultLengthSuffix({ designSystem, prefix: '--text-', value })}`,
+        : `text-${getClosestDefaultLengthSuffix({ designSystem: defaultDesignSystem, prefix: '--text-', value })}`,
       fontWeight: designSystem.resolveThemeValue(`${token.cssVar}--font-weight`)
         ? `font-${getFontWeightSuffix({ designSystem, value: designSystem.resolveThemeValue(`${token.cssVar}--font-weight`)!, disableApproximation })}`
         : undefined,
@@ -180,7 +185,9 @@ function getInlineUtilities(options: {
     }
   }
 
-  let targetSuffix = getInlineTargetSuffix({ designSystem, namespace: token.namespace, value, disableApproximation })
+  if (defaultDesignSystem.resolveThemeValue(token.cssVar)) return { targetToken: options.token.cssVarName }
+
+  let targetSuffix = getInlineTargetSuffix({ designSystem: defaultDesignSystem, namespace: token.namespace, value, disableApproximation })
   return { targetToken: `${token.namespace}-${targetSuffix}` }
 }
 

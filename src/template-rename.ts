@@ -136,6 +136,10 @@ function renameCandidate(options: {
 
     let changed = renameVariants({ variants: candidate.variants, from, to })
 
+    if (candidateRootMatchesNamespace({ candidate, namespace: from.namespace })) {
+      changed = renameUtilityValue({ candidate, from, to }) || changed
+    }
+
     if (candidateUsesCssVar({ designSystem, candidate: readonlyCandidate, cssVar: from.cssVar })) {
       changed = renameUtilityValue({ candidate, from, to }) || changed
     }
@@ -229,6 +233,12 @@ function getArbitraryPropertyUtilityRoot(options: { property: string; namespace:
     if (options.property === 'border-color') return 'border'
   }
   if (options.namespace === 'radius' && options.property === 'border-radius') return 'rounded'
+  if (options.namespace === 'shadow' && options.property === 'box-shadow') return 'shadow'
+}
+
+function candidateRootMatchesNamespace(options: { candidate: Candidate; namespace: string }): boolean {
+  if (options.namespace !== 'shadow') return false
+  return options.candidate.kind === 'functional' && options.candidate.root === 'shadow'
 }
 
 function applyTargetModifier(options: { candidate: Candidate; to: TokenPair }) {

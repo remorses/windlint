@@ -12,6 +12,18 @@ Given `windlint rename color-social-apple color-brand-apple` from a project dire
 4. Uses oxide Scanner to find Tailwind candidates in templates with exact positions, renames matching suffixes
 5. Splices changes into strings by position so offsets don't drift
 
+## Inline command rule
+
+`windlint inline <token>` is a specialized rename. It must reuse the same template candidate parsing and replacement logic as `windlint rename` instead of having a separate scanner or separate utility parser.
+
+The only extra step inline adds is computing a replacement token from the source token value:
+
+- For colors, lengths, spacing, and radius aliases, choose the closest Tailwind built-in approximation when approximation is enabled.
+- For shadows and exact values that do not have a useful built-in equivalent, use an arbitrary utility like `shadow-[0_1px_2px_0_#0a0d1408]`.
+- For default Tailwind token names that the project overrides, such as `radius-sm`, do not rename them to a different default name. Inline custom aliases like `radius-10`, not canonical default names.
+
+After computing the target token, inline should flow through `findTemplateCandidateRenameChanges()` / `renameTemplateTokens()` style logic so namespace handling, variants, arbitrary values, and splicing stay consistent with rename.
+
 ## Architecture inspiration
 
 This tool is modeled after the **Tailwind CSS v4 upgrade CLI** (`@tailwindcss/upgrade`). Study these files for patterns on how to build robust template migration tools:

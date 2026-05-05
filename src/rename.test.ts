@@ -819,6 +819,68 @@ describe('inlineToken', () => {
       `"<div class=\"rounded-xl hover:rounded-xl\">Card</div>"`,
     )
   })
+
+  test('does not inline overridden default radius names to a different default name', async () => {
+    let dir = path.join(TMP_DIR, `inline-overridden-radius-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+@theme {
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 1rem;
+}
+`,
+    )
+    await fs.writeFile(path.join(dir, 'index.html'), `<div class="rounded-sm hover:rounded-sm">Card</div>`)
+
+    let result = await inlineToken({ token: 'radius-sm', base: dir })
+
+    expect(result.filesChanged).toBe(0)
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div class=\"rounded-sm hover:rounded-sm\">Card</div>"`,
+    )
+  })
+
+  test('inlines shadow tokens to arbitrary shadow utilities', async () => {
+    let dir = path.join(TMP_DIR, `inline-shadow-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+@theme {
+  --shadow-regular-xs: 0 1px 2px 0 #0a0d1408;
+  --shadow-regular-sm: 0 2px 4px #1b1c1d0a;
+  --shadow-regular-md: 0 16px 32px -12px #0e121b1a;
+  --shadow-button-primary-focus: 0 0 0 2px var(--background), 0 0 0 4px #ff91471a;
+  --shadow-button-important-focus: 0 0 0 2px var(--background), 0 0 0 4px #a3a3a329;
+  --shadow-button-error-focus: 0 0 0 2px var(--background), 0 0 0 4px #fb37481a;
+  --shadow-fancy-buttons-neutral: 0 1px 2px 0 #1b1c1d7a, 0 0 0 1px #242628;
+  --shadow-fancy-buttons-primary: 0 1px 2px 0 #0e121b3d, 0 0 0 1px var(--primary);
+  --shadow-fancy-buttons-error: 0 1px 2px 0 #0e121b3d, 0 0 0 1px var(--destructive);
+  --shadow-fancy-buttons-stroke: 0 1px 3px 0 #0e121b1f, 0 0 0 1px var(--border);
+  --shadow-toggle-switch: 0 6px 10px 0 #0e121b0f, 0 2px 4px 0 #0e121b08;
+  --shadow-switch-thumb: 0 4px 8px 0 #1b1c1d0f, 0 2px 4px 0 #0e121b14;
+  --shadow-tooltip: 0 12px 24px 0 #0e121b0f, 0 1px 2px 0 #0e121b08;
+}
+`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      `<div class="shadow-regular-xs hover:shadow-button-primary-focus shadow-fancy-buttons-primary shadow-tooltip">Card</div>`,
+    )
+
+    await inlineToken({ token: 'shadow-regular-xs', base: dir })
+    await inlineToken({ token: 'shadow-button-primary-focus', base: dir })
+    await inlineToken({ token: 'shadow-fancy-buttons-primary', base: dir })
+    await inlineToken({ token: 'shadow-tooltip', base: dir })
+
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div class=\"shadow-[0_1px_2px_0_#0a0d1408] hover:shadow-[0_0_0_2px_var(--background),_0_0_0_4px_#ff91471a] shadow-[0_1px_2px_0_#0e121b3d,_0_0_0_1px_var(--primary)] shadow-[0_12px_24px_0_#0e121b0f,_0_1px_2px_0_#0e121b08]\">Card</div>"`,
+    )
+  })
 })
 
 describe('renameApplyDirectives — @apply directives (#3)', () => {
