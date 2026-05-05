@@ -45,10 +45,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/remorses/css-rename"
+    "url": "https://github.com/remorses/windlint"
   },
-  "homepage": "https://github.com/remorses/css-rename",
-  "bugs": "https://github.com/remorses/css-rename/issues",
+  "homepage": "https://github.com/remorses/windlint",
+  "bugs": "https://github.com/remorses/windlint/issues",
   "license": "MIT",
   "dependencies": {
     "@tailwindcss/oxide": "^4.2.4",
