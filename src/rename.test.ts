@@ -92,6 +92,19 @@ describe('parseToken', () => {
       }
     `)
   })
+
+  test('parses arbitrary bracket modifier target like color-white/[.16]', () => {
+    let token = parseToken('color-white/[.16]')
+    expect(token).toMatchInlineSnapshot(`
+      {
+        "cssVar": "--color-white",
+        "cssVarName": "color-white",
+        "namespace": "color",
+        "utilityModifier": "[.16]",
+        "utilitySuffix": "white",
+      }
+    `)
+  })
 })
 
 describe('renameCssVariables', () => {
@@ -199,6 +212,32 @@ describe('renameTemplateTokens', () => {
     )
   })
 
+  test('renames alpha token to arbitrary bracket modifier like color-white/[.16]', async () => {
+    let input = `<div class="text-white-alpha-16 hover:bg-white-alpha-16 border-white-alpha-16">`
+    let result = await renameTemplateTokens({
+      content: input,
+      extension: 'html',
+      from: parseToken('color-white-alpha-16'),
+      to: parseToken('color-white/[.16]'),
+    })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="text-white/[.16] hover:bg-white/[.16] border-white/[.16]">"`,
+    )
+  })
+
+  test('renames arbitrary var() to bracket modifier like color-white/[.16]', async () => {
+    let input = `<div class="bg-[var(--color-white-alpha-16)] text-[var(--color-white-alpha-16)]">`
+    let result = await renameTemplateTokens({
+      content: input,
+      extension: 'html',
+      from: parseToken('color-white-alpha-16'),
+      to: parseToken('color-white/[.16]'),
+    })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="bg-white/[.16] text-white/[.16]">"`,
+    )
+  })
+
   test('renames in JSX className', async () => {
     let input = `<button className='text-social-apple hover:bg-social-apple/5'>`
     let result = await renameTemplateTokens({ content: input, extension: 'tsx', from, to })
@@ -260,6 +299,18 @@ describe('renameTemplateTokens', () => {
     })
     expect(result).toMatchInlineSnapshot(
       `"<div class="@panel:grid @max-panel:flex @min-panel:block">"`,
+    )
+  })
+
+  test('variant-only rename does not canonicalize unrelated arbitrary utilities', async () => {
+    let result = await renameTemplateTokens({
+      content: `<div class="md:[display:flex] md:[color:var(--color-red-500)]">`,
+      extension: 'html',
+      from: parseToken('breakpoint-md'),
+      to: parseToken('breakpoint-tablet'),
+    })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="tablet:[display:flex] tablet:[color:var(--color-red-500)]">"`,
     )
   })
 
@@ -489,6 +540,33 @@ describe('full project rename', () => {
     `)
     await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
       `"<div class="bg-primary/10 text-primary/10" style="color: var(--color-primary-alpha-10)"></div>"`,
+    )
+  })
+
+  test('bracket arbitrary modifier targets like color-white/[.16] rewrite markup', async () => {
+    let dir = path.join(TMP_DIR, `bracket-modifier-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(path.join(dir, 'globals.css'), `@theme {\n  --color-white-alpha-16: rgba(255,255,255,.16);\n}`)
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      `<div class="bg-white-alpha-16 text-[var(--color-white-alpha-16)] hover:border-white-alpha-16" style="color: var(--color-white-alpha-16)"></div>`,
+    )
+
+    await rename({
+      from: 'color-white-alpha-16',
+      to: 'color-white/[.16]',
+      base: dir,
+    })
+
+    // CSS should NOT be modified (slash targets are markup-only)
+    await expect(fs.readFile(path.join(dir, 'globals.css'), 'utf-8')).resolves.toMatchInlineSnapshot(`
+      "@theme {
+        --color-white-alpha-16: rgba(255,255,255,.16);
+      }"
+    `)
+    // Markup should be rewritten to use the bracket modifier
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div class="bg-white/[.16] text-white/[.16] hover:border-white/[.16]" style="color: var(--color-white-alpha-16)"></div>"`,
     )
   })
 })

@@ -41,13 +41,18 @@ export async function renameTemplateTokens(options: {
     let replaced = renameCandidate({ rawCandidate: candidate, designSystem, from, to })
     if (replaced === candidate) continue
 
-    // Canonicalize the replacement so e.g. text-[var(--color-pink-500)] becomes text-pink-500
-    // when --color-pink-500 is a known theme token.
-    let canonicalized = designSystem.canonicalizeCandidates([replaced])[0] ?? replaced
+    // Only canonicalize when the replacement still contains the target CSS variable.
+    // This collapses e.g. text-[var(--color-pink-500)] → text-pink-500 without
+    // rewriting unrelated syntax (like [display:flex] → flex) in variant-only renames.
+    let shouldCanonicalize = replaced.includes(to.cssVar)
+    let replacement = shouldCanonicalize
+      ? designSystem.canonicalizeCandidates([replaced])[0] ?? replaced
+      : replaced
+
     changes.push({
       start: position,
       end: position + candidate.length,
-      replacement: canonicalized,
+      replacement,
     })
   }
 
