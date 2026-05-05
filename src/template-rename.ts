@@ -72,6 +72,17 @@ export async function renameTemplateTokens(options: {
         skipCssStringsAndComments: false,
       }),
     )
+  } else {
+    // For opacity targets, replace var(--old) with color-mix() in non-candidate contexts
+    // (inline styles, SVG props, etc). Utility classes are already handled above.
+    changes.push(
+      ...findVarCallChangesForOpacityTarget({
+        content,
+        from,
+        to,
+        blockedRanges: changes,
+      }),
+    )
   }
 
   if (changes.length === 0) return content
@@ -386,4 +397,62 @@ function themeValueForNamespace(namespace: string): string {
     default:
       return '1rem'
   }
+}
+
+/**
+ * Find var(--from-css-var) calls in non-candidate contexts and replace them with
+ * color-mix() for opacity/modifier targets. For example:
+ *   var(--color-primary-alpha-10) → color-mix(in srgb, var(--color-primary) 10%, transparent)
+ */
+export function findVarCallChangesForOpacityTarget(options: {
+  content: string
+  from: TokenPair
+  to: TokenPair
+  blockedRanges: StringChange[]
+}): StringChange[] {
+  let { content, from, to, blockedRanges } = options
+  let changes: StringChange[] = []
+  let searchPattern = `var(${from.cssVar})`
+  let index = 0
+
+  while (index < content.length) {
+    let pos = content.indexOf(searchPattern, index)
+    if (pos === -1) break
+
+    let start = pos
+    let end = pos + searchPattern.length
+
+    // Check if this position is inside a range already handled by candidate renaming
+    let blocked = blockedRanges.some((range) => start >= range.start && end <= range.end)
+
+    if (!blocked) {
+      let percentage = modifierToPercentage(to.utilityModifier!)
+      let replacement = `color-mix(in srgb, var(${to.cssVar}) ${percentage}%, transparent)`
+      changes.push({ start, end, replacement })
+    }
+
+    index = end
+  }
+
+  return changes
+}
+
+/**
+ * Convert a Tailwind modifier to a percentage number.
+ * Examples: "10" → 10, "[.16]" → 16, "[16%]" → 16, "50" → 50
+ */
+export function modifierToPercentage(modifier: string): number {
+  // Bracket modifier like [.16] or [16%]
+  if (modifier.startsWith('[') && modifier.endsWith(']')) {
+    let inner = modifier.slice(1, -1)
+    // Handle percentage like "16%"
+    if (inner.endsWith('%')) return parseFloat(inner.slice(0, -1))
+    // Handle decimal like ".16" (means 16%)
+    let num = parseFloat(inner)
+    if (num < 1) return Math.round(num * 100)
+    return num
+  }
+
+  // Plain number modifier like "10" means 10%
+  return parseFloat(modifier)
 }

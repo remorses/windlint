@@ -5,7 +5,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { rename } from './rename.ts'
-import { renameCssVariables } from './css-rename.ts'
+import { renameCssVariables, renameApplyDirectives } from './css-rename.ts'
 import { renameTemplateTokens } from './template-rename.ts'
 import { parseToken } from './token.ts'
 import { countTokenUsage, formatTokenUsageTable } from './count.ts'
@@ -571,7 +571,7 @@ describe('full project rename', () => {
       }"
     `)
     await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
-      `"<div class="bg-primary/10 text-primary/10" style="color: var(--color-primary-alpha-10)"></div>"`,
+      `"<div class="bg-primary/10 text-primary/10" style="color: color-mix(in srgb, var(--color-primary) 10%, transparent)"></div>"`,
     )
   })
 
@@ -596,10 +596,174 @@ describe('full project rename', () => {
         --color-white-alpha-16: rgba(255,255,255,.16);
       }"
     `)
-    // Markup should be rewritten to use the bracket modifier
+    // Markup should be rewritten to use the bracket modifier, and var() in inline
+    // styles should become color-mix() since the variable is an opacity target
     await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
-      `"<div class="bg-white/[.16] text-white/[.16] hover:border-white/[.16]" style="color: var(--color-white-alpha-16)"></div>"`,
+      `"<div class="bg-white/[.16] text-white/[.16] hover:border-white/[.16]" style="color: color-mix(in srgb, var(--color-white) 16%, transparent)"></div>"`,
     )
+  })
+})
+
+describe('renameApplyDirectives — @apply directives (#3)', () => {
+  test('renames utility classes inside @apply in CSS', () => {
+    let from = parseToken('color-text-strong-950')
+    let to = parseToken('color-foreground')
+    let input = `.card {\n  @apply text-text-strong-950 bg-white;\n}`
+    let result = renameApplyDirectives({ content: input, from, to })
+    expect(result).toMatchInlineSnapshot(`
+      ".card {
+        @apply text-foreground bg-white;
+      }"
+    `)
+  })
+
+  test('renames @apply with variants in CSS', () => {
+    let from = parseToken('color-text-strong-950')
+    let to = parseToken('color-foreground')
+    let input = `.card {\n  @apply hover:text-text-strong-950 dark:text-text-strong-950;\n}`
+    let result = renameApplyDirectives({ content: input, from, to })
+    expect(result).toMatchInlineSnapshot(`
+      ".card {
+        @apply hover:text-foreground dark:text-foreground;
+      }"
+    `)
+  })
+
+  test('full project rename catches @apply in CSS files', async () => {
+    let dir = path.join(TMP_DIR, `apply-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@theme {\n  --color-text-strong-950: #000;\n}\n\n.heading {\n  @apply text-text-strong-950;\n}`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      `<div class="text-text-strong-950">hello</div>`,
+    )
+
+    await rename({ from: 'color-text-strong-950', to: 'color-foreground', base: dir })
+
+    await expect(fs.readFile(path.join(dir, 'globals.css'), 'utf-8')).resolves.toMatchInlineSnapshot(`
+      "@theme {
+        --color-foreground: #000;
+      }
+
+      .heading {
+        @apply text-foreground;
+      }"
+    `)
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div class="text-foreground">hello</div>"`,
+    )
+  })
+})
+
+describe('var() in inline styles with opacity targets (#4, #5)', () => {
+  test('opacity target converts var() in inline styles to color-mix()', async () => {
+    let from = parseToken('color-primary-alpha-10')
+    let to = parseToken('color-primary/10')
+    let input = `<div style="color: var(--color-primary-alpha-10)">hello</div>`
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
+    expect(result).toMatchInlineSnapshot(
+      `"<div style="color: color-mix(in srgb, var(--color-primary) 10%, transparent)">hello</div>"`,
+    )
+  })
+
+  test('bracket modifier converts var() to color-mix() with correct percentage', async () => {
+    let from = parseToken('color-white-alpha-16')
+    let to = parseToken('color-white/[.16]')
+    let input = `<svg fill="var(--color-white-alpha-16)"></svg>`
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
+    expect(result).toMatchInlineSnapshot(
+      `"<svg fill="color-mix(in srgb, var(--color-white) 16%, transparent)"></svg>"`,
+    )
+  })
+
+  test('opacity target converts var() in JSX props to color-mix()', async () => {
+    let from = parseToken('color-orange-alpha-10')
+    let to = parseToken('color-orange/10')
+    let input = `<Icon fill="var(--color-orange-alpha-10)" stroke="var(--color-orange-alpha-10)" />`
+    let result = await renameTemplateTokens({ content: input, extension: 'tsx', from, to })
+    expect(result).toMatchInlineSnapshot(
+      `"<Icon fill="color-mix(in srgb, var(--color-orange) 10%, transparent)" stroke="color-mix(in srgb, var(--color-orange) 10%, transparent)" />"`,
+    )
+  })
+
+  test('opacity target does not touch var() refs that are already inside candidate ranges', async () => {
+    // var() inside a Tailwind arbitrary value is handled by the candidate logic, not the fallback
+    let from = parseToken('color-primary-alpha-10')
+    let to = parseToken('color-primary/10')
+    let input = `<div class="bg-[var(--color-primary-alpha-10)]">hello</div>`
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
+    expect(result).toMatchInlineSnapshot(`"<div class="bg-primary/10">hello</div>"`)
+  })
+})
+
+describe('self-referencing variable definitions (#6)', () => {
+  test('removes declaration that would become circular', () => {
+    let input = `@theme {\n  --color-yellow-500: #eab308;\n  --color-away-base: var(--color-yellow-500);\n}`
+    let result = renameCssVariables({
+      content: input,
+      from: parseToken('color-away-base'),
+      to: parseToken('color-yellow-500'),
+    })
+    // --color-away-base: var(--color-yellow-500) would become --color-yellow-500: var(--color-yellow-500)
+    // which is circular, so the declaration is removed entirely
+    expect(result).toMatchInlineSnapshot(`
+      "@theme {
+        --color-yellow-500: #eab308;
+      }"
+    `)
+  })
+
+  test('removes circular declaration but keeps other var() refs intact', () => {
+    let input = `@theme {\n  --color-yellow-500: #eab308;\n  --color-away-base: var(--color-yellow-500);\n}\n\n.card {\n  color: var(--color-away-base);\n}`
+    let result = renameCssVariables({
+      content: input,
+      from: parseToken('color-away-base'),
+      to: parseToken('color-yellow-500'),
+    })
+    expect(result).toMatchInlineSnapshot(`
+      "@theme {
+        --color-yellow-500: #eab308;
+      }
+
+      .card {
+        color: var(--color-yellow-500);
+      }"
+    `)
+  })
+})
+
+describe('duplicate variable deduplication (#7)', () => {
+  test('removes existing target declaration when rename creates a duplicate', () => {
+    // After a prior rename, --color-foreground already exists. Now renaming
+    // --color-text-strong-950 to --color-foreground would create a duplicate.
+    let input = `@theme {\n  --color-foreground: var(--color-neutral-950);\n  --color-text-strong-950: var(--color-neutral-950);\n}`
+    let result = renameCssVariables({
+      content: input,
+      from: parseToken('color-text-strong-950'),
+      to: parseToken('color-foreground'),
+    })
+    expect(result).toMatchInlineSnapshot(`
+      "@theme {
+        --color-foreground: var(--color-neutral-950);
+      }"
+    `)
+  })
+
+  test('deduplicates in .dark scope too', () => {
+    let input = `.dark {\n  --color-foreground: var(--color-neutral-0);\n  --color-text-strong-950: var(--color-neutral-0);\n}`
+    let result = renameCssVariables({
+      content: input,
+      from: parseToken('color-text-strong-950'),
+      to: parseToken('color-foreground'),
+    })
+    expect(result).toMatchInlineSnapshot(`
+      ".dark {
+        --color-foreground: var(--color-neutral-0);
+      }"
+    `)
   })
 })
 

@@ -3,10 +3,21 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import pc from 'picocolors'
-import { renameCssVariables } from './css-rename.ts'
+import { renameApplyDirectives, renameCssVariables } from './css-rename.ts'
 import { discoverFiles, getExtension } from './discover.ts'
 import { renameTemplateTokens } from './template-rename.ts'
 import { computeReplacements, parseToken, type TokenPair } from './token.ts'
+
+/**
+ * Write file atomically: write to a temp file in the same directory, then rename.
+ * This prevents data loss if the process crashes mid-write (OOM, SIGKILL, disk full).
+ * rename(2) on the same filesystem is atomic on POSIX.
+ */
+async function atomicWriteFile(filePath: string, content: string): Promise<void> {
+  let tmpPath = filePath + '.windlint-tmp'
+  await fs.writeFile(tmpPath, content, 'utf-8')
+  await fs.rename(tmpPath, filePath)
+}
 
 export interface RenameOptions {
   /** Source token name (e.g. "color-social-apple" or "--color-social-apple") */
@@ -64,33 +75,51 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
 
   let changes: FileChange[] = []
 
-  // Process CSS files. Slash targets like `color-primary/10` are Tailwind
-  // utility modifiers, not valid CSS variable names, so they are markup-only.
-  if (!toToken.utilityModifier) {
-    for (let file of cssFiles) {
-      let content = await fs.readFile(file, 'utf-8')
-      if (!content.includes(fromToken.cssVar)) continue
+  // Process CSS files: rename variable declarations/references AND utility
+  // classes inside @apply directives. Slash targets like `color-primary/10` are
+  // Tailwind utility modifiers, not valid CSS variable names, so CSS variable
+  // renaming is skipped for them — but @apply still needs processing.
+  for (let file of cssFiles) {
+    let content = await fs.readFile(file, 'utf-8')
+    if (!mightContainCssToken({ content, token: fromToken, to: toToken })) continue
 
-      let renamed = renameCssVariables({ content, from: fromToken, to: toToken })
+    let renamed = content
 
-      if (renamed !== content) {
-        let replacementCount = countDifferences({
+    // Rename CSS variable declarations and var() references (skip for slash targets)
+    if (!toToken.utilityModifier) {
+      renamed = renameCssVariables({ content: renamed, from: fromToken, to: toToken })
+    }
+
+    // Rename utility classes inside @apply directives
+    renamed = renameApplyDirectives({ content: renamed, from: fromToken, to: toToken })
+
+    if (renamed !== content) {
+      let replacementCount = countDifferences({
+        original: content,
+        modified: renamed,
+        searchTerm: fromToken.cssVar,
+      })
+      // Also count utility suffix changes (for @apply renames)
+      if (replacementCount <= 0 && fromToken.utilitySuffix) {
+        replacementCount = countDifferences({
           original: content,
           modified: renamed,
-          searchTerm: fromToken.cssVar,
+          searchTerm: fromToken.utilitySuffix,
         })
-        let relativePath = path.relative(base, file)
-        changes.push({ file, relativePath, replacements: replacementCount })
+      }
+      if (replacementCount <= 0) replacementCount = 1
 
-        if (!dryRun) {
-          await fs.writeFile(file, renamed, 'utf-8')
-        }
+      let relativePath = path.relative(base, file)
+      changes.push({ file, relativePath, replacements: replacementCount })
 
-        if (verbose) {
-          console.error(
-            `  ${pc.green('✓')} ${relativePath} (${replacementCount} replacement${replacementCount === 1 ? '' : 's'})`,
-          )
-        }
+      if (!dryRun) {
+        await atomicWriteFile(file, renamed)
+      }
+
+      if (verbose) {
+        console.error(
+          `  ${pc.green('✓')} ${relativePath} (${replacementCount} replacement${replacementCount === 1 ? '' : 's'})`,
+        )
       }
     }
   }
@@ -118,7 +147,7 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
       changes.push({ file, relativePath, replacements: replacementCount })
 
       if (!dryRun) {
-        await fs.writeFile(file, renamed, 'utf-8')
+        await atomicWriteFile(file, renamed)
       }
 
       if (verbose) {
@@ -142,6 +171,17 @@ function mightContainTemplateToken(options: { content: string; token: TokenPair 
   let { content, token } = options
   return content.includes(token.cssVar) ||
     (token.utilitySuffix !== '' && content.includes(token.utilitySuffix))
+}
+
+function mightContainCssToken(options: { content: string; token: TokenPair; to: TokenPair }): boolean {
+  let { content, token, to } = options
+  // Check for CSS variable references
+  if (content.includes(token.cssVar)) return true
+  // Check for utility suffix (for @apply directives)
+  if (token.utilitySuffix !== '' && content.includes(token.utilitySuffix)) return true
+  // For duplicate detection: check if target already exists
+  if (content.includes(to.cssVar)) return true
+  return false
 }
 
 function countDifferences(options: {
