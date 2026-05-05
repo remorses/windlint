@@ -86,7 +86,7 @@ describe('renameCssVariables', () => {
 
   test('renames declarations', () => {
     let input = `@theme {\n  --color-social-apple: #000000;\n}`
-    let result = renameCssVariables(input, from, to)
+    let result = renameCssVariables({ content: input, from, to })
     expect(result).toMatchInlineSnapshot(`
       "@theme {
         --color-brand-apple: #000000;
@@ -96,19 +96,19 @@ describe('renameCssVariables', () => {
 
   test('renames var() references', () => {
     let input = `color: var(--color-social-apple);`
-    let result = renameCssVariables(input, from, to)
+    let result = renameCssVariables({ content: input, from, to })
     expect(result).toMatchInlineSnapshot(`"color: var(--color-brand-apple);"`)
   })
 
   test('renames var() with fallback', () => {
     let input = `color: var(--color-social-apple, #000);`
-    let result = renameCssVariables(input, from, to)
+    let result = renameCssVariables({ content: input, from, to })
     expect(result).toMatchInlineSnapshot(`"color: var(--color-brand-apple, #000);"`)
   })
 
   test('does not rename partial matches', () => {
     let input = `--color-social-apple-pie: #000;\n--color-social-apple: #111;`
-    let result = renameCssVariables(input, from, to)
+    let result = renameCssVariables({ content: input, from, to })
     expect(result).toMatchInlineSnapshot(`
       "--color-social-apple-pie: #000;
       --color-brand-apple: #111;"
@@ -117,11 +117,19 @@ describe('renameCssVariables', () => {
 
   test('renames multiple occurrences', () => {
     let input = `--color-social-apple: #000;\nbox-shadow: 0 0 0 2px var(--color-social-apple);`
-    let result = renameCssVariables(input, from, to)
+    let result = renameCssVariables({ content: input, from, to })
     expect(result).toMatchInlineSnapshot(`
       "--color-brand-apple: #000;
       box-shadow: 0 0 0 2px var(--color-brand-apple);"
     `)
+  })
+
+  test('does not rename CSS comments or strings', () => {
+    let input = `/* var(--color-social-apple) */\n.demo::before { content: "--color-social-apple"; color: var(--color-social-apple); }`
+    let result = renameCssVariables({ content: input, from, to })
+    expect(result).toMatchInlineSnapshot(
+      `"/* var(--color-social-apple) */\n.demo::before { content: \"--color-social-apple\"; color: var(--color-brand-apple); }"`,
+    )
   })
 })
 
@@ -129,46 +137,90 @@ describe('renameTemplateTokens', () => {
   let from = parseToken('color-social-apple')
   let to = parseToken('color-brand-apple')
 
-  test('renames utility classes in HTML', () => {
+  test('renames utility classes in HTML', async () => {
     let input = `<div class="text-social-apple bg-social-apple">`
-    let result = renameTemplateTokens(input, 'html', from, to)
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
     expect(result).toMatchInlineSnapshot(`"<div class="text-brand-apple bg-brand-apple">"`)
   })
 
-  test('renames with variant prefixes', () => {
+  test('renames with variant prefixes', async () => {
     let input = `<div class="hover:text-social-apple dark:bg-social-apple">`
-    let result = renameTemplateTokens(input, 'html', from, to)
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
     expect(result).toMatchInlineSnapshot(
       `"<div class="hover:text-brand-apple dark:bg-brand-apple">"`,
     )
   })
 
-  test('renames with opacity modifier', () => {
+  test('renames with opacity modifier', async () => {
     let input = `<div class="text-social-apple/50 bg-social-apple/80">`
-    let result = renameTemplateTokens(input, 'html', from, to)
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
     expect(result).toMatchInlineSnapshot(
       `"<div class="text-brand-apple/50 bg-brand-apple/80">"`,
     )
   })
 
-  test('renames in JSX className', () => {
+  test('renames in JSX className', async () => {
     let input = `<button className='text-social-apple hover:bg-social-apple/5'>`
-    let result = renameTemplateTokens(input, 'tsx', from, to)
+    let result = await renameTemplateTokens({ content: input, extension: 'tsx', from, to })
     expect(result).toMatchInlineSnapshot(
       `"<button className='text-brand-apple hover:bg-brand-apple/5'>"`,
     )
   })
 
-  test('renames var() in arbitrary values', () => {
+  test('renames var() in arbitrary values', async () => {
     let input = `<div class="text-[var(--color-social-apple)]">`
-    let result = renameTemplateTokens(input, 'html', from, to)
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
     expect(result).toMatchInlineSnapshot(`"<div class="text-[var(--color-brand-apple)]">"`)
   })
 
-  test('does not rename other brands', () => {
+  test('does not rename other brands', async () => {
     let input = `<div class="text-social-apple text-social-twitter">`
-    let result = renameTemplateTokens(input, 'html', from, to)
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
     expect(result).toMatchInlineSnapshot(`"<div class="text-brand-apple text-social-twitter">"`)
+  })
+
+  test('does not rename unrelated utilities with the same suffix', async () => {
+    let input = `<div class="text-social-apple bg-social-apple rounded-social-apple font-social-apple animate-social-apple">`
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="text-brand-apple bg-brand-apple rounded-social-apple font-social-apple animate-social-apple">"`,
+    )
+  })
+
+  test('renames spacing utilities without touching color utilities', async () => {
+    let result = await renameTemplateTokens({
+      content: `<div class="p-card -mt-card gap-card text-card rounded-card">`,
+      extension: 'html',
+      from: parseToken('spacing-card'),
+      to: parseToken('spacing-panel'),
+    })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="p-panel -mt-panel gap-panel text-card rounded-card">"`,
+    )
+  })
+
+  test('renames breakpoint variants', async () => {
+    let result = await renameTemplateTokens({
+      content: `<div class="md:text-social-apple max-md:bg-social-apple min-md:border-social-apple hover:text-social-apple bg-[url(foo:md:bar)]">`,
+      extension: 'html',
+      from: parseToken('breakpoint-md'),
+      to: parseToken('breakpoint-tablet'),
+    })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="tablet:text-social-apple max-tablet:bg-social-apple min-tablet:border-social-apple hover:text-social-apple bg-[url(foo:md:bar)]">"`,
+    )
+  })
+
+  test('renames container variants', async () => {
+    let result = await renameTemplateTokens({
+      content: `<div class="@sidebar:grid @max-sidebar:flex @min-sidebar:block">`,
+      extension: 'html',
+      from: parseToken('container-sidebar'),
+      to: parseToken('container-panel'),
+    })
+    expect(result).toMatchInlineSnapshot(
+      `"<div class="@panel:grid @max-panel:flex @min-panel:block">"`,
+    )
   })
 })
 

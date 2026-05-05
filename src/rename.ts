@@ -67,10 +67,14 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
   // Process CSS files
   for (let file of cssFiles) {
     let content = await fs.readFile(file, 'utf-8')
-    let renamed = renameCssVariables(content, fromToken, toToken)
+    let renamed = renameCssVariables({ content, from: fromToken, to: toToken })
 
     if (renamed !== content) {
-      let replacementCount = countDifferences(content, renamed, fromToken.cssVar)
+      let replacementCount = countDifferences({
+        original: content,
+        modified: renamed,
+        searchTerm: fromToken.cssVar,
+      })
       let relativePath = path.relative(base, file)
       changes.push({ file, relativePath, replacements: replacementCount })
 
@@ -90,7 +94,7 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
   for (let file of templateFiles) {
     let content = await fs.readFile(file, 'utf-8')
     let extension = getExtension(file)
-    let renamed = renameTemplateTokens(content, extension, fromToken, toToken)
+    let renamed = await renameTemplateTokens({ content, extension, from: fromToken, to: toToken })
 
     if (renamed !== content) {
       let replacementCount = countStringOccurrences(renamed, toToken.utilitySuffix) -
@@ -127,7 +131,12 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
   }
 }
 
-function countDifferences(original: string, modified: string, searchTerm: string): number {
+function countDifferences(options: {
+  original: string
+  modified: string
+  searchTerm: string
+}): number {
+  let { original, modified, searchTerm } = options
   let originalCount = countStringOccurrences(original, searchTerm)
   let modifiedCount = countStringOccurrences(modified, searchTerm)
   return originalCount - modifiedCount
