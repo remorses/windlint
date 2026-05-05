@@ -1,14 +1,14 @@
 # css-rename
 
-CLI tool that renames CSS variables and design tokens across Tailwind CSS v4 projects. Uses `@tailwindcss/oxide` Scanner to find all Tailwind utility candidates with byte positions, then replaces token suffixes precisely.
+CLI tool that renames CSS variables and design tokens across Tailwind CSS v4 projects. Uses PostCSS for CSS structure and `@tailwindcss/oxide` Scanner for Tailwind utility candidates with byte positions, then replaces token suffixes precisely.
 
 ## How it works
 
-Given `css-rename color-social-apple color-brand-apple ./project`:
+Given `css-rename color-social-apple color-brand-apple` from a project directory:
 
 1. Parses token names to derive CSS variable form (`--color-social-apple`) and utility suffix (`social-apple`)
 2. Discovers all CSS and template files via globby
-3. Renames CSS variable declarations and `var()` references in CSS files
+3. Uses PostCSS to rename CSS variable declarations, `@property` params, and `var()` references in CSS files
 4. Uses oxide Scanner to find Tailwind candidates in templates with exact positions, renames matching suffixes
 5. Splices changes into strings by position so offsets don't drift
 
@@ -34,11 +34,21 @@ This tool is modeled after the **Tailwind CSS v4 upgrade CLI** (`@tailwindcss/up
 - **Oxide Scanner NAPI bindings** (Rust scanner exposed to JS):
   https://github.com/tailwindlabs/tailwindcss/blob/main/crates/node/src/lib.rs
 
+## CSS parsing rule
+
+Always use **PostCSS** when changing behavior that reads or edits CSS files.
+
+- For CSS declarations, walk PostCSS `Declaration` nodes. Read `declaration.prop` for custom property names and `declaration.value` for `var()` references.
+
+- For `@property --token { ... }`, walk PostCSS `AtRule` nodes with `name === 'property'` and inspect `atRule.params`.
+
+- For source edits, collect byte offsets from PostCSS source locations and use `spliceChangesIntoString()`. Do not mutate and stringify the whole PostCSS tree unless the goal is to reformat the file.
+
+- Do not add new regex or hand-rolled scanners for CSS syntax. A tiny raw string scanner is acceptable only inside already-isolated declaration values or non-CSS markup strings where PostCSS cannot parse the surrounding language.
+
 ## Improving robustness
 
-The current implementation uses regex for CSS variable renaming. When extending this tool, prefer **AST-based parsing over regex** for more robust results:
-
-- For CSS files, use **PostCSS** to walk declarations and values. PostCSS parses CSS into an AST where you can inspect each declaration's property and value nodes, avoiding false matches inside comments or strings.
+When extending this tool, prefer AST-based parsing over raw text matching:
 
 - For template files, the oxide Scanner already handles robust candidate extraction. It understands HTML attributes, JSX props, Vue/Svelte templates, and template literals. Always prefer `getCandidatesWithPositions()` over regex for finding Tailwind classes.
 
@@ -52,10 +62,10 @@ The Tailwind upgrade tool demonstrates the gold standard: it parses candidates i
 
 ```bash
 # Rename a token
-css-rename color-social-apple color-brand-apple ./my-project
+css-rename color-social-apple color-brand-apple
 
 # Dry run (preview only)
-css-rename color-social-apple color-brand-apple . --dry-run --verbose
+css-rename color-social-apple color-brand-apple --dry-run --verbose
 ```
 
 ## Testing

@@ -2,7 +2,7 @@
   "name": "css-rename",
   "version": "0.0.1",
   "type": "module",
-  "description": "Rename CSS variables and design tokens across Tailwind CSS projects",
+  "description": "Rename CSS variables and Tailwind design tokens, including slash opacity utility targets",
   "bin": "dist/cli.js",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

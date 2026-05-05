@@ -8,8 +8,8 @@
 </div>
 
 `css-rename` is a small CLI for **Tailwind CSS v4 token migrations**. It renames CSS variables in
-CSS files, updates matching utility classes in markup, and can count which declared tokens are used
-the most.
+CSS files, updates matching utility classes in markup, encodes alpha tokens as slash opacity
+modifiers, and can count which declared tokens are used the most.
 
 ```txt
 old token                         css-rename                         new token
@@ -52,34 +52,48 @@ also appears inside arbitrary values like `text-[var(--color-social-apple)]`.
 Run it directly with your package manager:
 
 ```bash
-pnpm dlx css-rename color-social-apple color-brand-apple ./app
+pnpm dlx css-rename color-social-apple color-brand-apple
 ```
 
 Or install it in a project:
 
 ```bash
 pnpm add -D css-rename
-pnpm css-rename count .
+pnpm css-rename count
 ```
 
 ## Rename a token
 
-Pass the old token, the new token, and an optional target directory.
+Run the command from the project directory and pass the old token and the new token.
 
 ```bash
-css-rename color-social-apple color-brand-apple ./app
+css-rename color-social-apple color-brand-apple
 ```
 
 The input may include the leading `--`:
 
 ```bash
-css-rename --color-social-apple --color-brand-apple .
+css-rename --color-social-apple --color-brand-apple
 ```
 
 Use `--dry-run` to preview the files that would change:
 
 ```bash
-css-rename color-social-apple color-brand-apple . --dry-run --verbose
+css-rename color-social-apple color-brand-apple --dry-run --verbose
+```
+
+To collapse an alpha token into a Tailwind **slash opacity** modifier, put the modifier in the target:
+
+```bash
+css-rename color-primary-alpha-10 color-primary/10
+```
+
+That rewrites markup utilities, but leaves CSS declarations and inline style `var()` references alone
+because `--color-primary/10` is not a CSS variable name:
+
+```diff
+-bg-primary-alpha-10 hover:text-primary-alpha-10 text-[var(--color-primary-alpha-10)]
++bg-primary/10 hover:text-primary/10 text-primary/10
 ```
 
 ```txt
@@ -97,7 +111,7 @@ Use `count` to see which declared CSS variables are used in markup. The most use
 first.
 
 ```bash
-css-rename count ./app
+css-rename count
 ```
 
 Example output:
