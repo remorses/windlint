@@ -480,7 +480,12 @@ function collectRuleEntries(options: {
 
   switch (node.kind) {
     case 'rule':
-      if (!node.selector.startsWith('.')) nextContext = [...context, `rule:${node.selector}`]
+      // Skip simple class selectors (the utility's own class like ".bg-red-500").
+      // Keep compound selectors that contain variant context (like ".foo .bg-red-500"
+      // from [.foo_&]:bg-red-500) so arbitrary variant contexts are not treated as identical.
+      if (!(node.selector.startsWith('.') && !/\s/.test(node.selector))) {
+        nextContext = [...context, `rule:${node.selector}`]
+      }
       break
     case 'at-rule':
       if (node.name !== '@property') nextContext = [...context, `at:${node.name} ${node.params}`]

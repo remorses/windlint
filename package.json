@@ -1,6 +1,6 @@
 {
   "name": "windlint",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "description": "Lint and rename CSS variables and design tokens in Tailwind CSS v4 projects",
   "bin": {
