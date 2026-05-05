@@ -79,6 +79,19 @@ describe('parseToken', () => {
       }
     `)
   })
+
+  test('parses slash utility modifier target', () => {
+    let token = parseToken('color-primary/10')
+    expect(token).toMatchInlineSnapshot(`
+      {
+        "cssVar": "--color-primary",
+        "cssVarName": "color-primary",
+        "namespace": "color",
+        "utilityModifier": "10",
+        "utilitySuffix": "primary",
+      }
+    `)
+  })
 })
 
 describe('renameCssVariables', () => {
@@ -414,6 +427,31 @@ describe('full project rename', () => {
 
     let globalsCssAfter = await fs.readFile(path.join(dir, 'globals.css'), 'utf-8')
     expect(globalsCssAfter).toBe(globalsCssBefore)
+  })
+
+  test('slash opacity targets only rewrite markup', async () => {
+    let dir = path.join(TMP_DIR, `opacity-target-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(path.join(dir, 'globals.css'), `@theme {\n  --color-primary-alpha-10: #000;\n}`)
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      `<div class="bg-primary-alpha-10 text-[var(--color-primary-alpha-10)]" style="color: var(--color-primary-alpha-10)"></div>`,
+    )
+
+    await rename({
+      from: 'color-primary-alpha-10',
+      to: 'color-primary/10',
+      base: dir,
+    })
+
+    await expect(fs.readFile(path.join(dir, 'globals.css'), 'utf-8')).resolves.toMatchInlineSnapshot(`
+      "@theme {
+        --color-primary-alpha-10: #000;
+      }"
+    `)
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div class="bg-primary/10 text-primary/10" style="color: var(--color-primary-alpha-10)"></div>"`,
+    )
   })
 })
 
