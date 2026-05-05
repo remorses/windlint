@@ -27,10 +27,6 @@ export interface InlineOptions {
   verbose?: boolean
   /** Use arbitrary values like text-[3.5rem] instead of nearest Tailwind defaults. */
   disableApproximation?: boolean
-  /** Include --text-token--line-height as a leading-* utility when present. */
-  withLeading?: boolean
-  /** Include --text-token--letter-spacing as a tracking-* utility when present. */
-  withTracking?: boolean
 }
 
 export interface InlineResult {
@@ -88,8 +84,6 @@ export async function inlineToken(options: InlineOptions): Promise<InlineResult>
       token,
       designSystem,
       utilities,
-      withLeading: options.withLeading,
-      withTracking: options.withTracking,
     })
 
     if (inlined === content) continue
@@ -119,8 +113,6 @@ async function inlineTemplateTextToken(options: {
   token: TokenPair
   designSystem: DesignSystem
   utilities: InlineUtilities
-  withLeading?: boolean
-  withTracking?: boolean
 }): Promise<{ content: string; replacements: number }> {
   let changes = (await findTemplateCandidateRenameChanges({
     content: options.content,
@@ -151,8 +143,6 @@ async function inlineTemplateTextToken(options: {
       rawCandidate: change.candidate,
       fontSizeReplacement: change.replacement,
       utilities: options.utilities,
-      withLeading: options.withLeading,
-      withTracking: options.withTracking,
     })
   }
 
@@ -319,14 +309,12 @@ function buildReplacementCandidate(options: {
   rawCandidate: string
   fontSizeReplacement: string
   utilities: InlineUtilities
-  withLeading?: boolean
-  withTracking?: boolean
 }): string {
   let prefix = getVariantPrefix(options.rawCandidate)
   let utilities = [options.fontSizeReplacement]
   if (options.utilities.fontWeight) utilities.push(prefix + options.utilities.fontWeight)
-  if (options.withTracking && options.utilities.letterSpacing) utilities.push(prefix + options.utilities.letterSpacing)
-  if (options.withLeading && options.utilities.lineHeight) utilities.push(prefix + options.utilities.lineHeight)
+  if (options.utilities.letterSpacing) utilities.push(prefix + options.utilities.letterSpacing)
+  if (options.utilities.lineHeight) utilities.push(prefix + options.utilities.lineHeight)
   return utilities.join(' ')
 }
 
@@ -338,8 +326,8 @@ function getVariantPrefix(candidate: string): string {
 function formatReplacementUtilities(options: { utilities: InlineUtilities; options: InlineOptions }): string {
   let values = [options.utilities.targetToken]
   if (options.utilities.fontWeight) values.push(options.utilities.fontWeight)
-  if (options.options.withTracking && options.utilities.letterSpacing) values.push(options.utilities.letterSpacing)
-  if (options.options.withLeading && options.utilities.lineHeight) values.push(options.utilities.lineHeight)
+  if (options.utilities.letterSpacing) values.push(options.utilities.letterSpacing)
+  if (options.utilities.lineHeight) values.push(options.utilities.lineHeight)
   return values.join(' ')
 }
 

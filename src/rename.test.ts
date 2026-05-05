@@ -638,7 +638,7 @@ describe('inlineToken', () => {
     )
   })
 
-  test('can disable approximation and include optional tracking and leading', async () => {
+  test('can disable approximation and includes tracking and leading metadata', async () => {
     let dir = path.join(TMP_DIR, `inline-text-exact-project-${Date.now()}`)
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(
@@ -659,8 +659,6 @@ describe('inlineToken', () => {
       token: 'text-title-h1',
       base: dir,
       disableApproximation: true,
-      withLeading: true,
-      withTracking: true,
     })
 
     await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(

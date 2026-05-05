@@ -27,13 +27,10 @@ cli
   .option('--dry-run', 'Preview changes without writing files')
   .option('--verbose', 'Show every file and replacement')
   .option('--disable-approximation', 'Use arbitrary values like text-[3.5rem] instead of nearest Tailwind defaults')
-  .option('--with-leading', 'Include --text-token--line-height as a leading-* utility when present')
-  .option('--with-tracking', 'Include --text-token--letter-spacing as a tracking-* utility when present')
   .example('windlint inline text-title-h1')
   .example('windlint inline color-brand')
   .example('windlint inline radius-card')
   .example('windlint inline text-title-h1 --disable-approximation')
-  .example('windlint inline text-title-h1 --with-leading --with-tracking')
   .action(async (token, options, { console, process }) => {
     console.error(pc.bold('windlint inline'))
     console.error()
@@ -52,8 +49,6 @@ cli
       dryRun: options.dryRun,
       verbose: options.verbose,
       disableApproximation: options.disableApproximation,
-      withLeading: options.withLeading,
-      withTracking: options.withTracking,
     })
 
     console.error()

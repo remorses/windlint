@@ -148,11 +148,9 @@ windlint inline text-title-h1 --disable-approximation
 +<h1 class="text-[3.5rem] font-[500]">
 ```
 
-Leading and tracking are opt-in because teams often want to control those separately:
-
-```bash
-windlint inline text-title-h1 --with-leading --with-tracking
-```
+If the CSS token includes real `--text-token--line-height` or `--text-token--letter-spacing`
+metadata, `inline` includes `leading-*` and `tracking-*` utilities automatically. Remove those
+metadata declarations first when they should not be inlined.
 
 `inline` currently rewrites template candidates only. CSS `@apply text-title-h1` is intentionally
 left alone for now to keep the first implementation focused and safe.
