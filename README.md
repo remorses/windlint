@@ -8,9 +8,9 @@
 </div>
 
 `windlint` is a small CLI for **Tailwind CSS v4 token migrations**. It renames CSS variables in
-CSS files, updates matching utility classes in markup, encodes alpha tokens as slash opacity
-modifiers, lints non-canonical utilities and conflicts, and can count which declared tokens are used
-the most.
+CSS files, updates matching utility classes in markup, inlines text tokens into direct utilities,
+encodes alpha tokens as slash opacity modifiers, lints non-canonical utilities and conflicts, and can
+count which declared tokens are used the most.
 
 ```txt
 old token                          windlint                          new token
@@ -108,6 +108,54 @@ before                                              after
 │ class="text-social-apple"          │              │ class="text-brand-apple"           │
 └────────────────────────────────────┘              └────────────────────────────────────┘
 ```
+
+## Inline a text token
+
+Use `rename --inline` when a project token should become direct Tailwind utilities instead of
+another token. The first pass supports **text tokens** like `text-title-h1`.
+
+```bash
+windlint rename text-title-h1 --inline
+```
+
+Given this token definition:
+
+```css
+@theme {
+  --text-title-h1: 3.5rem;
+  /* --text-title-h1--line-height: 4rem; */
+  /* --text-title-h1--letter-spacing: -0.01em; */
+  --text-title-h1--font-weight: 500;
+}
+```
+
+`windlint` rounds the font size to the closest default Tailwind size and uses named utilities when
+they match Tailwind defaults:
+
+```diff
+-<h1 class="text-title-h1 hover:text-title-h1">
++<h1 class="text-6xl font-medium hover:text-6xl hover:font-medium">
+```
+
+Pass `--disable-approximation` to keep the raw values as arbitrary utilities:
+
+```bash
+windlint rename text-title-h1 --inline --disable-approximation
+```
+
+```diff
+-<h1 class="text-title-h1">
++<h1 class="text-[3.5rem] font-[500]">
+```
+
+Leading and tracking are opt-in because teams often want to control those separately:
+
+```bash
+windlint rename text-title-h1 --inline --with-leading --with-tracking
+```
+
+`rename --inline` currently rewrites template candidates only. CSS `@apply text-title-h1` is
+intentionally left alone for now to keep the first implementation focused and safe.
 
 ## Lint Tailwind classes
 
@@ -265,6 +313,13 @@ await rename({
   to: "color-brand-apple",
   base: "./app",
   dryRun: true,
+});
+
+await rename({
+  from: "text-title-h1",
+  base: "./app",
+  inline: true,
+  disableApproximation: true,
 });
 
 let diagnostics = await lint({ base: "./app", fix: true });

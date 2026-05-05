@@ -5,6 +5,7 @@ import path from 'node:path'
 import pc from 'picocolors'
 import { renameApplyDirectives, renameCssVariables } from './css-rename.ts'
 import { discoverFiles, getExtension } from './discover.ts'
+import { inlineToken } from './inline.ts'
 import { renameTemplateTokens } from './template-rename.ts'
 import { computeReplacements, parseToken, type TokenPair } from './token.ts'
 
@@ -23,13 +24,21 @@ export interface RenameOptions {
   /** Source token name (e.g. "color-social-apple" or "--color-social-apple") */
   from: string
   /** Target token name (e.g. "color-primary" or "--color-primary") */
-  to: string
+  to?: string
   /** Project directory to process */
   base: string
   /** Preview changes without writing */
   dryRun?: boolean
   /** Show every file and replacement */
   verbose?: boolean
+  /** Inline the source token into direct Tailwind utilities instead of renaming to another token. */
+  inline?: boolean
+  /** Use arbitrary values like text-[3.5rem] instead of nearest Tailwind defaults in inline mode. */
+  disableApproximation?: boolean
+  /** Include --text-token--line-height as a leading-* utility in inline mode. */
+  withLeading?: boolean
+  /** Include --text-token--letter-spacing as a tracking-* utility in inline mode. */
+  withTracking?: boolean
 }
 
 export interface RenameResult {
@@ -46,6 +55,21 @@ export interface FileChange {
 
 export async function rename(options: RenameOptions): Promise<RenameResult> {
   let { from, to, base, dryRun = false, verbose = false } = options
+
+  if (options.inline) {
+    if (to) throw new Error('Do not pass a target token when using --inline.')
+    return inlineToken({
+      token: from,
+      base,
+      dryRun,
+      verbose,
+      disableApproximation: options.disableApproximation,
+      withLeading: options.withLeading,
+      withTracking: options.withTracking,
+    })
+  }
+
+  if (!to) throw new Error('Missing target token. Pass <to> or use --inline.')
 
   let fromToken = parseToken(from)
   let toToken = parseToken(to)

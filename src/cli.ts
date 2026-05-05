@@ -23,20 +23,31 @@ cli
 
 cli
   .command(
-    'rename <from> <to>',
-    'Rename a CSS variable/token across a Tailwind project. Use targets like color-primary/10 or color-white/[.16] to encode opacity in markup. Run commands sequentially, not in parallel, to prevent concurrent file writes.',
+    'rename <from> [to]',
+    'Rename a CSS variable/token across a Tailwind project, or inline a text token with --inline. Use targets like color-primary/10 or color-white/[.16] to encode opacity in markup. Run commands sequentially, not in parallel, to prevent concurrent file writes.',
   )
   .option('--dry-run', 'Preview changes without writing files')
   .option('--verbose', 'Show every file and replacement')
+  .option('--inline', 'Inline a text token into direct Tailwind utilities instead of renaming to another token')
+  .option('--disable-approximation', 'Use arbitrary values like text-[3.5rem] instead of nearest Tailwind defaults with --inline')
+  .option('--with-leading', 'Include --text-token--line-height as a leading-* utility with --inline')
+  .option('--with-tracking', 'Include --text-token--letter-spacing as a tracking-* utility with --inline')
   .example('windlint rename color-social-apple color-primary')
   .example('windlint rename --color-social-apple --color-primary')
   .example('windlint rename color-bg-strong-950 color-bg-strong')
   .example('windlint rename color-primary-alpha-10 color-primary/10')
   .example('windlint rename color-white-alpha-16 color-white/[.16]')
+  .example('windlint rename text-title-h1 --inline')
+  .example('windlint rename text-title-h1 --inline --disable-approximation')
+  .example('windlint rename text-title-h1 --inline --with-leading --with-tracking')
   .action(async (from, to, options, { console, process }) => {
     console.error(pc.bold('windlint rename'))
     console.error()
-    console.error(`  Renaming: ${pc.red(from)} → ${pc.green(to)}`)
+    if (options.inline) {
+      console.error(`  Inlining: ${pc.green(from)}`)
+    } else {
+      console.error(`  Renaming: ${pc.red(from)} → ${pc.green(to)}`)
+    }
     console.error(`  Directory: ${pc.dim(process.cwd)}`)
     console.error()
 
@@ -51,6 +62,10 @@ cli
       base: process.cwd,
       dryRun: options.dryRun,
       verbose: options.verbose,
+      inline: options.inline,
+      disableApproximation: options.disableApproximation,
+      withLeading: options.withLeading,
+      withTracking: options.withTracking,
     })
 
     console.error()

@@ -604,6 +604,93 @@ describe('full project rename', () => {
   })
 })
 
+describe('rename --inline', () => {
+  test('inlines a text token to nearest Tailwind size and named weight', async () => {
+    let dir = path.join(TMP_DIR, `inline-text-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+
+@theme {
+  --text-title-h1: 3.5rem;
+  /* --text-title-h1--line-height: 4rem; */
+  /* --text-title-h1--letter-spacing: -0.01em; */
+  --text-title-h1--font-weight: 500;
+}
+`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      `<h1 class="text-title-h1 hover:text-title-h1">Title</h1>`,
+    )
+
+    let result = await rename({ from: 'text-title-h1', base: dir, inline: true })
+
+    expect(result.filesChanged).toBe(1)
+    expect(result.totalReplacements).toBe(2)
+    expect(result.changes).toEqual([
+      { file: path.join(dir, 'index.html'), relativePath: 'index.html', replacements: 2 },
+    ])
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<h1 class=\"text-6xl font-medium hover:text-6xl hover:font-medium\">Title</h1>"`,
+    )
+  })
+
+  test('can disable approximation and include optional tracking and leading', async () => {
+    let dir = path.join(TMP_DIR, `inline-text-exact-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+
+@theme {
+  --text-title-h1: 3.5rem;
+  --text-title-h1--line-height: 4rem;
+  --text-title-h1--letter-spacing: -0.01em;
+  --text-title-h1--font-weight: 500;
+}
+`,
+    )
+    await fs.writeFile(path.join(dir, 'index.html'), `<h1 class="text-title-h1">Title</h1>`)
+
+    await rename({
+      from: 'text-title-h1',
+      base: dir,
+      inline: true,
+      disableApproximation: true,
+      withLeading: true,
+      withTracking: true,
+    })
+
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<h1 class=\"text-[3.5rem] font-[500] tracking-[-0.01em] leading-[4rem]\">Title</h1>"`,
+    )
+  })
+
+  test('dry run reports changes without writing files', async () => {
+    let dir = path.join(TMP_DIR, `inline-text-dry-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+@theme {
+  --text-title-h1: 3.5rem;
+  --text-title-h1--font-weight: 500;
+}
+`,
+    )
+    await fs.writeFile(path.join(dir, 'index.html'), `<h1 class="text-title-h1">Title</h1>`)
+
+    let result = await rename({ from: 'text-title-h1', base: dir, inline: true, dryRun: true })
+
+    expect(result.filesChanged).toBe(1)
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<h1 class=\"text-title-h1\">Title</h1>"`,
+    )
+  })
+})
+
 describe('renameApplyDirectives — @apply directives (#3)', () => {
   test('renames utility classes inside @apply in CSS', () => {
     let from = parseToken('color-text-strong-950')
