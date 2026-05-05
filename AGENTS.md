@@ -1,10 +1,10 @@
-# css-rename
+# windlint
 
-CLI tool that renames CSS variables and design tokens across Tailwind CSS v4 projects. Uses PostCSS for CSS structure and `@tailwindcss/oxide` Scanner for Tailwind utility candidates with byte positions, then replaces token suffixes precisely.
+CLI tool that lints and renames CSS variables and design tokens across Tailwind CSS v4 projects. Uses PostCSS for CSS structure and `@tailwindcss/oxide` Scanner for Tailwind utility candidates with byte positions, then replaces token suffixes precisely.
 
 ## How it works
 
-Given `css-rename color-social-apple color-brand-apple` from a project directory:
+Given `windlint rename color-social-apple color-brand-apple` from a project directory:
 
 1. Parses token names to derive CSS variable form (`--color-social-apple`) and utility suffix (`social-apple`)
 2. Discovers all CSS and template files via globby
@@ -56,16 +56,16 @@ When extending this tool, prefer AST-based parsing over raw text matching:
 
 - For inline styles and JS string contexts, consider using a proper JS/TS parser (like the approach in Tailwind's `is-safe-migration.ts`) to verify context before replacing.
 
-The Tailwind upgrade tool demonstrates the gold standard: it parses candidates into an AST (`designSystem.parseCandidate`), manipulates the candidate AST, then prints it back (`designSystem.printCandidate`). This avoids all regex pitfalls. For css-rename, the equivalent would be parsing the candidate, checking if its root or value contains the old token, replacing at the AST level, and printing back.
+The Tailwind upgrade tool demonstrates the gold standard: it parses candidates into an AST (`designSystem.parseCandidate`), manipulates the candidate AST, then prints it back (`designSystem.printCandidate`). This avoids all regex pitfalls. For windlint, the equivalent would be parsing the candidate, checking if its root or value contains the old token, replacing at the AST level, and printing back.
 
 ## Running
 
 ```bash
 # Rename a token
-css-rename color-social-apple color-brand-apple
+windlint rename color-social-apple color-brand-apple
 
 # Dry run (preview only)
-css-rename color-social-apple color-brand-apple --dry-run --verbose
+windlint rename color-social-apple color-brand-apple --dry-run --verbose
 ```
 
 ## Testing

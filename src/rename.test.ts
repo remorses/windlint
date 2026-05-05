@@ -1,7 +1,8 @@
-// Tests for css-rename: copies fixture projects to tmp, runs rename, snapshots the diff.
+// Tests for windlint rename: copies fixture projects to tmp, runs rename, snapshots the diff.
 
 import { describe, test, expect, beforeEach } from 'vitest'
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { rename } from './rename.ts'
 import { renameCssVariables } from './css-rename.ts'
@@ -11,7 +12,7 @@ import { countTokenUsage, formatTokenUsageTable } from './count.ts'
 import { execSync } from 'node:child_process'
 
 const FIXTURES_DIR = path.resolve(import.meta.dirname, 'fixtures')
-const TMP_DIR = '/var/folders/8w/wvmrpgms5hngywvs8s99xnmm0000gn/T/opencode/css-rename-tests'
+const TMP_DIR = path.join(os.tmpdir(), 'windlint-tests')
 
 async function copyFixture(fixtureName: string): Promise<string> {
   let src = path.join(FIXTURES_DIR, fixtureName)

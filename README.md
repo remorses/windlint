@@ -1,18 +1,19 @@
 <div align='center'>
     <br/>
     <br/>
-    <h3>css-rename</h3>
-    <p>Rename and audit Tailwind v4 design tokens without regex migrations.</p>
+    <h3>windlint</h3>
+    <p>Lint, rename, and audit Tailwind v4 design tokens without regex migrations.</p>
     <br/>
     <br/>
 </div>
 
-`css-rename` is a small CLI for **Tailwind CSS v4 token migrations**. It renames CSS variables in
+`windlint` is a small CLI for **Tailwind CSS v4 token migrations**. It renames CSS variables in
 CSS files, updates matching utility classes in markup, encodes alpha tokens as slash opacity
-modifiers, and can count which declared tokens are used the most.
+modifiers, lints non-canonical utilities and conflicts, and can count which declared tokens are used
+the most.
 
 ```txt
-old token                         css-rename                         new token
+old token                          windlint                          new token
 --color-social-apple       ───────────►────────────        --color-brand-apple
 text-social-apple          ───────────►────────────        text-brand-apple
 bg-[var(--color-social)]   ───────────►────────────        bg-[var(--color-brand)]
@@ -36,10 +37,10 @@ also appears inside arbitrary values like `text-[var(--color-social-apple)]`.
        ▼        ▼              ▼                  ▼
  text-social  bg-social   border-social   var(--color-social)
        │        │              │                  │
-       └────────┴──────► css-rename ◄─────────────┘
+       └────────┴──────► windlint ◄───────────────┘
 ```
 
-`css-rename` uses the same kind of primitives Tailwind migration tools use:
+`windlint` uses the same kind of primitives Tailwind migration tools use:
 
 | Area      | Tooling                        | Why it matters                                                       |
 | --------- | ------------------------------ | -------------------------------------------------------------------- |
@@ -52,40 +53,43 @@ also appears inside arbitrary values like `text-[var(--color-social-apple)]`.
 Run it directly with your package manager:
 
 ```bash
-pnpm dlx css-rename color-social-apple color-brand-apple
+pnpm dlx windlint rename color-social-apple color-brand-apple
 ```
 
 Or install it in a project:
 
 ```bash
-pnpm add -D css-rename
-pnpm css-rename count
+pnpm add -D windlint
+pnpm windlint count
 ```
 
 ## Rename a token
 
 Run the command from the project directory and pass the old token and the new token.
+**Run renames sequentially**, not in parallel, to prevent concurrent file writes from corrupting each other.
 
 ```bash
-css-rename color-social-apple color-brand-apple
+windlint rename color-social-apple color-brand-apple
+windlint rename color-primary-alpha-10 color-primary/10
+windlint rename color-white-alpha-16 color-white/[.16]
 ```
 
 The input may include the leading `--`:
 
 ```bash
-css-rename --color-social-apple --color-brand-apple
+windlint rename --color-social-apple --color-brand-apple
 ```
 
 Use `--dry-run` to preview the files that would change:
 
 ```bash
-css-rename color-social-apple color-brand-apple --dry-run --verbose
+windlint rename color-social-apple color-brand-apple --dry-run --verbose
 ```
 
 To collapse an alpha token into a Tailwind **slash opacity** modifier, put the modifier in the target:
 
 ```bash
-css-rename color-primary-alpha-10 color-primary/10
+windlint rename color-primary-alpha-10 color-primary/10
 ```
 
 That rewrites markup utilities, but leaves CSS declarations and inline style `var()` references alone
@@ -105,13 +109,35 @@ before                                              after
 └────────────────────────────────────┘              └────────────────────────────────────┘
 ```
 
+## Lint Tailwind classes
+
+Use `lint` to find **non-canonical utilities**, **conflicting utilities** in the same class list,
+and CSS `var(--token)` references that do not exist in the Tailwind v4 design system.
+
+```bash
+windlint lint src/button.tsx globals.css
+windlint lint --fix
+```
+
+Example output:
+
+```txt
+src/button.tsx:5:42 warning font-[700] can be written as font-bold (suggest-canonical)
+src/button.tsx:8:12 warning hover:bg-red-500 conflicts with hover:bg-blue-500 (css-conflict)
+globals.css:14:8 error --color-brnad does not exist. Did you mean --color-brand? (invalid-config-path)
+
+Found 3 issues (1 error, 2 warnings)
+```
+
+With `--fix`, windlint rewrites canonical classes and deletes all but the last conflicting class.
+
 ## Count token usage
 
 Use `count` to see which declared CSS variables are used in markup. The most used variables appear
 first.
 
 ```bash
-css-rename count
+windlint count
 ```
 
 Example output:
@@ -232,7 +258,7 @@ count
 ## Programmatic API
 
 ```ts
-import { countTokenUsage, formatTokenUsageTable, rename } from "css-rename";
+import { countTokenUsage, formatTokenUsageTable, lint, rename } from "windlint";
 
 await rename({
   from: "color-social-apple",
@@ -240,6 +266,9 @@ await rename({
   base: "./app",
   dryRun: true,
 });
+
+let diagnostics = await lint({ base: "./app", fix: true });
+console.log(diagnostics.issueCount);
 
 let usage = await countTokenUsage({ base: "./app" });
 console.log(formatTokenUsageTable(usage));
@@ -258,5 +287,5 @@ Tests copy fixture projects to a temporary directory, run the migration, then sn
 This makes it easy to see every real edit the CLI would make.
 
 ```txt
-fixture project ─────► temporary copy ─────► css-rename ─────► git diff snapshot
+fixture project ─────► temporary copy ─────► windlint ─────► git diff snapshot
 ```

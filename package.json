@@ -1,9 +1,11 @@
 {
-  "name": "css-rename",
+  "name": "windlint",
   "version": "0.0.1",
   "type": "module",
-  "description": "Rename CSS variables and Tailwind design tokens, including slash opacity utility targets",
-  "bin": "dist/cli.js",
+  "description": "Lint and rename CSS variables and design tokens in Tailwind CSS v4 projects",
+  "bin": {
+    "windlint": "dist/cli.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -32,6 +34,7 @@
   },
   "keywords": [
     "css",
+    "lint",
     "rename",
     "tailwind",
     "design-tokens",
