@@ -41,10 +41,13 @@ export async function renameTemplateTokens(options: {
     let replaced = renameCandidate({ rawCandidate: candidate, designSystem, from, to })
     if (replaced === candidate) continue
 
+    // Canonicalize the replacement so e.g. text-[var(--color-pink-500)] becomes text-pink-500
+    // when --color-pink-500 is a known theme token.
+    let canonicalized = designSystem.canonicalizeCandidates([replaced])[0] ?? replaced
     changes.push({
       start: position,
       end: position + candidate.length,
-      replacement: replaced,
+      replacement: canonicalized,
     })
   }
 
@@ -229,13 +232,31 @@ function includesString(value: object | string | null | undefined, needle: strin
   return Object.values(value).some((item) => includesString(item, needle))
 }
 
-export function getDesignSystem(options: {
+// Lazy-loaded base design system used to detect which tokens already exist in the default theme.
+let baseDesignSystemPromise: Promise<DesignSystem> | undefined
+
+function getBaseDesignSystem(): Promise<DesignSystem> {
+  if (!baseDesignSystemPromise) {
+    baseDesignSystemPromise = __unstable__loadDesignSystem(defaultThemeCss)
+  }
+  return baseDesignSystemPromise
+}
+
+export async function getDesignSystem(options: {
   tokens: TokenPair[]
   candidates: string[]
 }): Promise<DesignSystem> {
   let { tokens, candidates } = options
+  let baseDs = await getBaseDesignSystem()
+
   let extraThemeVars = collectVariantThemeVars(candidates)
-  extraThemeVars.push(...tokens.map(themeDeclaration))
+  // Only register tokens that don't already exist in the default Tailwind theme,
+  // so canonicalizeCandidates can collapse e.g. text-[var(--color-pink-500)] → text-pink-500.
+  for (let token of tokens) {
+    if (!baseDs.resolveThemeValue(token.cssVar)) {
+      extraThemeVars.push(themeDeclaration(token))
+    }
+  }
 
   let key = extraThemeVars.sort().join('\n')
   let cached = designSystemCache.get(key)

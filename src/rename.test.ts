@@ -210,7 +210,7 @@ describe('renameTemplateTokens', () => {
   test('renames var() in arbitrary values', async () => {
     let input = `<div class="text-[var(--color-social-apple)]">`
     let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
-    expect(result).toMatchInlineSnapshot(`"<div class="text-[var(--color-brand-apple)]">"`)
+    expect(result).toMatchInlineSnapshot(`"<div class="text-(--color-brand-apple)">"`)
   })
 
   test('does not rename other brands', async () => {
@@ -261,6 +261,44 @@ describe('renameTemplateTokens', () => {
     expect(result).toMatchInlineSnapshot(
       `"<div class="@panel:grid @max-panel:flex @min-panel:block">"`,
     )
+  })
+
+  test('renames custom token to a built-in Tailwind color (no leftover var/--)', async () => {
+    // When the target is a built-in like pink-500, utility classes should just use the
+    // built-in utility suffix directly, no var() or -- should remain in the class name.
+    let from = parseToken('color-highlighted-base')
+    let to = parseToken('color-pink-500')
+
+    let input = `<div class="text-highlighted-base bg-highlighted-base hover:text-highlighted-base/50 border-highlighted-base">`
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
+    expect(result).toMatchInlineSnapshot(`"<div class="text-pink-500 bg-pink-500 hover:text-pink-500/50 border-pink-500">"`)
+  })
+
+  test('renames arbitrary var() to built-in Tailwind color utility', async () => {
+    let from = parseToken('color-highlighted-base')
+    let to = parseToken('color-pink-500')
+
+    let input = `<div class="text-[var(--color-highlighted-base)] bg-[var(--color-highlighted-base)]">`
+    let result = await renameTemplateTokens({ content: input, extension: 'html', from, to })
+    expect(result).toMatchInlineSnapshot(`"<div class="text-pink-500 bg-pink-500">"`)
+  })
+
+  test('renames custom token to built-in in CSS (declaration + var refs)', async () => {
+    let from = parseToken('color-highlighted-base')
+    let to = parseToken('color-pink-500')
+
+    let input = `@theme {\n  --color-highlighted-base: #ff69b4;\n}\n\n.card {\n  color: var(--color-highlighted-base);\n  border-color: var(--color-highlighted-base, #000);\n}`
+    let result = renameCssVariables({ content: input, from, to })
+    expect(result).toMatchInlineSnapshot(`
+      "@theme {
+        --color-pink-500: #ff69b4;
+      }
+
+      .card {
+        color: var(--color-pink-500);
+        border-color: var(--color-pink-500, #000);
+      }"
+    `)
   })
 })
 
@@ -340,7 +378,7 @@ describe('full project rename', () => {
          --color-bg-strong-950: var(--color-neutral-0);
        }
       diff --git a/page.html b/page.html
-      index 2739088..7b67bd1 100644
+      index 2739088..2c5b5d9 100644
       --- a/page.html
       +++ b/page.html
       @@ -5,15 +5,15 @@
@@ -367,7 +405,7 @@ describe('full project rename', () => {
        
            <!-- Arbitrary value with var -->
       -    <div class="text-[var(--color-social-apple)] bg-[var(--color-social-apple)]">
-      +    <div class="text-[var(--color-brand-apple)] bg-[var(--color-brand-apple)]">
+      +    <div class="text-(--color-brand-apple) bg-(--color-brand-apple)">
              Arbitrary values
            </div>
          </div>
