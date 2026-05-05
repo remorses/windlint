@@ -2,6 +2,7 @@
 
 import { Scanner } from '@tailwindcss/oxide'
 import { __unstable__loadDesignSystem } from 'tailwindcss'
+import { converter, parse as parseColor, type Oklch } from 'culori'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { parse, type Declaration } from 'postcss'
@@ -28,7 +29,12 @@ export interface LintDiagnostic {
   line: number
   column: number
   severity: 'error' | 'warning'
-  rule: 'suggest-canonical' | 'css-conflict' | 'invalid-config-path'
+  rule:
+    | 'suggest-canonical'
+    | 'css-conflict'
+    | 'invalid-config-path'
+    | 'prefer-theme-color'
+    | 'duplicate-theme-color'
   message: string
   candidate?: string
   replacement?: string
@@ -45,18 +51,70 @@ export interface LintResult {
 }
 
 const CSS_EXTENSIONS = new Set(['css'])
+const COLOR_DECLARATION_PROPERTIES = new Set([
+  'accent-color',
+  'background-color',
+  'border-color',
+  'border-block-color',
+  'border-inline-color',
+  'border-top-color',
+  'border-right-color',
+  'border-bottom-color',
+  'border-left-color',
+  'caret-color',
+  'color',
+  'column-rule-color',
+  'fill',
+  'outline-color',
+  'scrollbar-color',
+  'stroke',
+  'text-decoration-color',
+])
+const COLOR_UTILITY_ROOTS = new Set([
+  'accent',
+  'bg',
+  'border',
+  'caret',
+  'decoration',
+  'divide',
+  'fill',
+  'from',
+  'outline',
+  'placeholder',
+  'ring',
+  'stroke',
+  'text',
+  'to',
+  'via',
+])
+const toOklch = converter('oklch')
+const DUPLICATE_COLOR_DISTANCE = 0.01
+
+interface ThemeColor {
+  file: string
+  content: string
+  start: number
+  variable: string
+  utility: string
+  rawValue: string
+  value: string
+  oklch: Oklch
+}
 
 export async function lint(options: LintOptions): Promise<LintResult> {
   let { cssFiles, templateFiles, designCssFiles } = await resolveLintFiles(options)
   let designSystem = await loadProjectDesignSystem(designCssFiles)
+  let themeColors = await collectProjectThemeColors(designCssFiles)
   let diagnostics: LintDiagnostic[] = []
   let fixedFiles = 0
 
   for (let file of templateFiles) {
-    let result = await lintTemplateFile({ file, base: options.base, designSystem, fix: options.fix })
+    let result = await lintTemplateFile({ file, base: options.base, designSystem, themeColors, fix: options.fix })
     diagnostics.push(...result.diagnostics)
     if (result.fixed) fixedFiles++
   }
+
+  diagnostics.push(...findDuplicateThemeColorDiagnostics({ themeColors, base: options.base }))
 
   for (let file of cssFiles) {
     diagnostics.push(...await lintCssFile({ file, base: options.base, designSystem }))
@@ -156,13 +214,113 @@ function stripCssImports(content: string): string {
   return root.toString()
 }
 
+async function collectProjectThemeColors(cssFiles: string[]): Promise<ThemeColor[]> {
+  let declarations = new Map<string, string>()
+  let declarationSources = new Map<string, { file: string; content: string; start: number }>()
+  let colorVariables = new Set<string>()
+
+  for (let file of cssFiles) {
+    let content = await fs.readFile(file, 'utf-8')
+    let root = parse(content, { from: undefined })
+
+    root.walkDecls((declaration) => {
+      if (!declaration.prop.startsWith('--')) return
+      if (!declarations.has(declaration.prop)) declarations.set(declaration.prop, declaration.value.trim())
+      if (!declarationSources.has(declaration.prop)) {
+        declarationSources.set(declaration.prop, {
+          file,
+          content,
+          start: declaration.source?.start?.offset ?? 0,
+        })
+      }
+      if (declaration.prop.startsWith('--color-')) colorVariables.add(declaration.prop)
+    })
+  }
+
+  let colors: ThemeColor[] = []
+  for (let variable of colorVariables) {
+    let source = declarationSources.get(variable)
+    let value = resolveCssColorValue({ variable, declarations })
+    let oklch = value ? parseOklch(value) : undefined
+    if (!source || !value || !oklch) continue
+
+    colors.push({
+      ...source,
+      variable,
+      utility: variable.slice('--color-'.length),
+      rawValue: declarations.get(variable)!,
+      value,
+      oklch,
+    })
+  }
+
+  return colors
+}
+
+function resolveCssColorValue(options: {
+  variable: string
+  declarations: Map<string, string>
+  seen?: Set<string>
+}): string | undefined {
+  let seen = options.seen ?? new Set<string>()
+  if (seen.has(options.variable)) return undefined
+  seen.add(options.variable)
+
+  let value = options.declarations.get(options.variable)
+  if (!value) return undefined
+
+  let reference = getExactVarReference(value)
+  if (reference) {
+    return resolveCssColorValue({ variable: reference, declarations: options.declarations, seen })
+  }
+
+  return value
+}
+
+function parseOklch(value: string): Oklch | undefined {
+  let color = parseColor(value)
+  if (!color) return undefined
+  return toOklch(color)
+}
+
+function findDuplicateThemeColorDiagnostics(options: {
+  themeColors: ThemeColor[]
+  base: string
+}): LintDiagnostic[] {
+  let diagnostics: LintDiagnostic[] = []
+
+  for (let index = 0; index < options.themeColors.length; index++) {
+    let color = options.themeColors[index]!
+    if (getExactVarReference(color.rawValue)) continue
+    for (let other of options.themeColors.slice(index + 1)) {
+      if (getExactVarReference(other.rawValue)) continue
+      let distance = oklchDistance(color.oklch, other.oklch)
+      if (distance > DUPLICATE_COLOR_DISTANCE) continue
+
+      diagnostics.push(createDiagnostic({
+        content: other.content,
+        file: other.file,
+        relativePath: path.relative(options.base, other.file),
+        start: other.start,
+        severity: 'error',
+        rule: 'duplicate-theme-color',
+        message: `${other.variable} is too close to ${color.variable}. Deduplicate with ${other.variable}: var(${color.variable}) or merge both variables into one color token.`,
+        candidate: other.variable,
+      }))
+    }
+  }
+
+  return diagnostics
+}
+
 async function lintTemplateFile(options: {
   file: string
   base: string
   designSystem: DesignSystem
+  themeColors: ThemeColor[]
   fix?: boolean
 }): Promise<{ diagnostics: LintDiagnostic[]; fixed: boolean }> {
-  let { file, base, designSystem, fix } = options
+  let { file, base, designSystem, themeColors, fix } = options
   let content = await fs.readFile(file, 'utf-8')
   let scanner = new Scanner({})
   let candidates = scanner.getCandidatesWithPositions({ content, extension: getExtension(file) })
@@ -193,6 +351,21 @@ async function lintTemplateFile(options: {
 
   for (let { candidate, position } of candidates) {
     if (deletedStarts.has(position)) continue
+    let themeColorSuggestion = getThemeColorSuggestion({ candidate, designSystem, themeColors })
+    if (themeColorSuggestion) {
+      diagnostics.push(createDiagnostic({
+        content,
+        file,
+        relativePath,
+        start: position,
+        severity: 'warning',
+        rule: 'prefer-theme-color',
+        message: `${candidate} should use a project theme color. Closest: ${themeColorSuggestion.suggestions.join(', ')}`,
+        candidate,
+      }))
+      continue
+    }
+
     let canonical = designSystem.canonicalizeCandidates([candidate])[0]
     if (!canonical || canonical === candidate) continue
 
@@ -335,6 +508,130 @@ function collectDeclarationKeys(options: {
   }
 
   for (let child of node.nodes) collectDeclarationKeys({ node: child, context: nextContext, keys })
+}
+
+function getThemeColorSuggestion(options: {
+  candidate: string
+  designSystem: DesignSystem
+  themeColors: ThemeColor[]
+}): { suggestions: string[] } | undefined {
+  if (options.themeColors.length === 0) return undefined
+
+  let parsedCandidates = [...options.designSystem.parseCandidate(options.candidate)]
+  let parsedCandidate = parsedCandidates.find((candidate) => candidateHasColorRoot(candidate))
+  if (!parsedCandidate) return undefined
+  if (candidateUsesProjectThemeColor({ candidate: parsedCandidate, themeColors: options.themeColors })) return undefined
+  if (parsedCandidate.kind === 'functional' && parsedCandidate.modifier) return undefined
+
+  let color = getCompiledColor({
+    parsedCandidate,
+    designSystem: options.designSystem,
+    themeColors: options.themeColors,
+  })
+  if (!color) return undefined
+
+  let suggestions = options.themeColors
+    .map((themeColor) => ({
+      themeColor,
+      distance: oklchDistance(color, themeColor.oklch),
+    }))
+    .sort((a, b) => a.distance - b.distance || a.themeColor.utility.localeCompare(b.themeColor.utility))
+    .slice(0, 5)
+    .map(({ themeColor }) => `${parsedCandidate.root}-${themeColor.utility}`)
+
+  return suggestions.length > 0 ? { suggestions } : undefined
+}
+
+function candidateHasColorRoot(
+  candidate: ReturnType<DesignSystem['parseCandidate']>[number],
+): candidate is Extract<ReturnType<DesignSystem['parseCandidate']>[number], { root: string }> {
+  if (candidate.kind === 'arbitrary') return false
+  return COLOR_UTILITY_ROOTS.has(candidate.root)
+}
+
+function candidateUsesProjectThemeColor(options: {
+  candidate: ReturnType<DesignSystem['parseCandidate']>[number]
+  themeColors: ThemeColor[]
+}): boolean {
+  let variables = new Set(options.themeColors.map((color) => color.variable))
+  let utilities = new Set(options.themeColors.map((color) => color.utility))
+
+  if (options.candidate.kind === 'functional') {
+    if (options.candidate.value?.kind === 'named' && utilities.has(options.candidate.value.value)) return true
+    if (options.candidate.value?.kind === 'arbitrary') {
+      let reference = getExactVarReference(options.candidate.value.value)
+      if (reference && variables.has(reference)) return true
+    }
+  }
+
+  return false
+}
+
+function getCompiledColor(options: {
+  parsedCandidate: ReturnType<DesignSystem['parseCandidate']>[number]
+  designSystem: DesignSystem
+  themeColors: ThemeColor[]
+}): Oklch | undefined {
+  let projectVariables = new Set(options.themeColors.map((color) => color.variable))
+
+  for (let { node } of options.designSystem.compileAstNodes(options.parsedCandidate)) {
+    for (let declaration of collectColorDeclarations(node)) {
+      let value = declaration.value?.trim()
+      if (!value) continue
+
+      let reference = getExactVarReference(value)
+      if (reference) {
+        if (projectVariables.has(reference)) return undefined
+        let resolved = options.designSystem.resolveThemeValue(reference)
+        if (!resolved) return undefined
+        return parseOklch(resolved)
+      }
+
+      let color = parseOklch(value)
+      if (color) return color
+    }
+  }
+}
+
+function collectColorDeclarations(
+  node: ReturnType<DesignSystem['compileAstNodes']>[number]['node'],
+): Array<{ property: string; value: string | undefined }> {
+  if (node.kind === 'declaration') {
+    return COLOR_DECLARATION_PROPERTIES.has(node.property)
+      ? [{ property: node.property, value: node.value }]
+      : []
+  }
+
+  switch (node.kind) {
+    case 'rule':
+    case 'at-rule':
+    case 'context':
+    case 'at-root':
+      return node.nodes.flatMap((child) => collectColorDeclarations(child))
+    default:
+      return []
+  }
+}
+
+function getExactVarReference(value: string): string | undefined {
+  let match = value.trim().match(/^var\(\s*(--[\w-]+)\s*\)$/)
+  return match?.[1]
+}
+
+function oklchDistance(a: Oklch, b: Oklch): number {
+  let hueDistance = circularHueDistance(a.h, b.h) / 180
+  let averageChroma = ((a.c ?? 0) + (b.c ?? 0)) / 2
+  return Math.sqrt(
+    (a.l - b.l) ** 2 +
+      ((a.c ?? 0) - (b.c ?? 0)) ** 2 +
+      (averageChroma * hueDistance) ** 2,
+  )
+}
+
+function circularHueDistance(a: number | undefined, b: number | undefined): number {
+  if (a === undefined || b === undefined) return 0
+  let distance = Math.abs(a - b) % 360
+  return distance > 180 ? 360 - distance : distance
 }
 
 function deletionChange(options: {

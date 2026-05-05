@@ -50,6 +50,14 @@ describe('lint', () => {
           "rule": "suggest-canonical",
           "severity": "warning",
         },
+        {
+          "column": 48,
+          "line": 1,
+          "message": "hover:bg-blue-500 should use a project theme color. Closest: bg-brand",
+          "relativePath": "button.tsx",
+          "rule": "prefer-theme-color",
+          "severity": "warning",
+        },
       ]
     `)
   })
@@ -125,6 +133,12 @@ describe('lint', () => {
           "rule": "css-conflict",
           "severity": "warning",
         },
+        {
+          "message": "bg-red-500 should use a project theme color. Closest: bg-brand",
+          "relativePath": "button.tsx",
+          "rule": "prefer-theme-color",
+          "severity": "warning",
+        },
       ]
     `)
   })
@@ -148,7 +162,7 @@ describe('lint', () => {
 
     let result = await lint({ base: dir, fix: true })
 
-    expect(result.diagnostics).toMatchInlineSnapshot(`[]`)
+    expect(result.fixedCount).toMatchInlineSnapshot(`0`)
     await expect(fs.readFile(file, 'utf-8')).resolves.toMatchInlineSnapshot(`
       "<button className="bg-red-500! bg-blue-500">Save</button>
       "
@@ -168,6 +182,107 @@ describe('lint', () => {
 
       globals.css:2:20 error --color-brnad does not exist. Did you mean --color-brand? (invalid-config-path)
       Found 1 issue (1 error, 0 warnings)"
+    `)
+  })
+
+  test('suggests nearest project theme colors for literal and built-in colors', async () => {
+    let dir = await createProject('nearest-theme-colors')
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import "tailwindcss";
+@theme {
+  --color-background: oklch(1 0 0);
+  --color-card: oklch(0.98 0 0);
+  --color-muted: oklch(96.7% 0.003 264.542);
+  --color-border: #e5e7eb;
+  --color-primary: #123456;
+  --color-secondary: #223456;
+  --color-accent: #334455;
+}
+`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'button.tsx'),
+      `<div className="bg-gray-100"></div>\n<div className="text-[#123456]"></div>\n`,
+    )
+
+    let result = await lint({ base: dir })
+
+    expect(result.diagnostics.map(({ relativePath, line, column, severity, rule, message }) => ({
+      relativePath,
+      line,
+      column,
+      severity,
+      rule,
+      message,
+    }))).toMatchInlineSnapshot(`
+      [
+        {
+          "column": 17,
+          "line": 1,
+          "message": "bg-gray-100 should use a project theme color. Closest: bg-muted, bg-card, bg-background, bg-border, bg-accent",
+          "relativePath": "button.tsx",
+          "rule": "prefer-theme-color",
+          "severity": "warning",
+        },
+        {
+          "column": 17,
+          "line": 2,
+          "message": "text-[#123456] should use a project theme color. Closest: text-primary, text-secondary, text-accent, text-border, text-muted",
+          "relativePath": "button.tsx",
+          "rule": "prefer-theme-color",
+          "severity": "warning",
+        },
+      ]
+    `)
+  })
+
+  test('does not suggest a theme color when the candidate already uses a project token', async () => {
+    let dir = await createProject('theme-color-already-token')
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import "tailwindcss";\n@theme { --color-muted: oklch(96.7% 0.003 264.542); }\n`,
+    )
+    await fs.writeFile(path.join(dir, 'button.tsx'), `<div className="bg-muted text-muted"></div>\n`)
+
+    let result = await lint({ base: dir })
+
+    expect(result.diagnostics).toMatchInlineSnapshot(`[]`)
+  })
+
+  test('errors when two theme color variables are almost identical', async () => {
+    let dir = await createProject('duplicate-theme-colors')
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import "tailwindcss";
+@theme {
+  --color-primary: #123456;
+  --color-accent: #123457;
+  --color-primary-alias: var(--color-primary);
+}
+`,
+    )
+
+    let result = await lint({ base: dir })
+
+    expect(result.diagnostics.map(({ relativePath, line, column, severity, rule, message }) => ({
+      relativePath,
+      line,
+      column,
+      severity,
+      rule,
+      message,
+    }))).toMatchInlineSnapshot(`
+      [
+        {
+          "column": 3,
+          "line": 4,
+          "message": "--color-accent is too close to --color-primary. Deduplicate with --color-accent: var(--color-primary) or merge both variables into one color token.",
+          "relativePath": "globals.css",
+          "rule": "duplicate-theme-color",
+          "severity": "error",
+        },
+      ]
     `)
   })
 })
