@@ -42,6 +42,8 @@ export interface TokenPair {
   namespace: string
   /** The utility class suffix (namespace stripped), e.g. "social-apple" */
   utilitySuffix: string
+  /** Optional Tailwind opacity/value modifier from targets like "color-primary/10" */
+  utilityModifier?: string
 }
 
 /**
@@ -53,7 +55,10 @@ export interface TokenPair {
  */
 export function parseToken(input: string, namespaceHint?: string): TokenPair {
   // Strip leading -- if present
-  let name = input.startsWith('--') ? input.slice(2) : input
+  let rawName = input.startsWith('--') ? input.slice(2) : input
+  let slashIndex = rawName.indexOf('/')
+  let name = slashIndex === -1 ? rawName : rawName.slice(0, slashIndex)
+  let utilityModifier = slashIndex === -1 ? undefined : rawName.slice(slashIndex + 1)
 
   // Try to detect namespace from the name
   let namespace = namespaceHint
@@ -83,6 +88,7 @@ export function parseToken(input: string, namespaceHint?: string): TokenPair {
     cssVarName: name,
     namespace,
     utilitySuffix,
+    ...(utilityModifier ? { utilityModifier } : {}),
   }
 }
 

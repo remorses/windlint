@@ -48,15 +48,17 @@ export async function renameTemplateTokens(options: {
     })
   }
 
-  changes.push(
-    ...findCssVariableNameChanges({
-      content,
-      fromVar: from.cssVar,
-      toVar: to.cssVar,
-      blockedRanges: changes,
-      skipCssStringsAndComments: false,
-    }),
-  )
+  if (!to.utilityModifier) {
+    changes.push(
+      ...findCssVariableNameChanges({
+        content,
+        fromVar: from.cssVar,
+        toVar: to.cssVar,
+        blockedRanges: changes,
+        skipCssStringsAndComments: false,
+      }),
+    )
+  }
 
   if (changes.length === 0) return content
   return spliceChangesIntoString(content, changes)
@@ -71,14 +73,21 @@ function renameCandidate(options: {
   let { rawCandidate, designSystem, from, to } = options
 
   for (let readonlyCandidate of designSystem.parseCandidate(rawCandidate)) {
+    let candidate: Candidate = structuredClone(readonlyCandidate)
+
     if (
       rawCandidate.includes(from.cssVar) &&
       candidateUsesCssVar({ designSystem, candidate: readonlyCandidate, cssVar: from.cssVar })
     ) {
+      if (to.utilityModifier && renameExactArbitraryVarValue({ candidate, from, to })) {
+        return designSystem.printCandidate(candidate)
+      }
+
+      if (to.utilityModifier) return rawCandidate
+
       return rawCandidate.replaceAll(from.cssVar, to.cssVar)
     }
 
-    let candidate: Candidate = structuredClone(readonlyCandidate)
     let changed = renameVariants({ variants: candidate.variants, from, to })
 
     if (candidateUsesCssVar({ designSystem, candidate: readonlyCandidate, cssVar: from.cssVar })) {
@@ -98,10 +107,14 @@ function renameUtilityValue(options: { candidate: Candidate; from: TokenPair; to
   if (candidate.kind === 'functional') {
     if (candidate.value?.kind === 'named' && candidate.value.value === from.utilitySuffix) {
       candidate.value.value = to.utilitySuffix
+      applyTargetModifier({ candidate, to })
       changed = true
     }
 
     if (candidate.value?.kind === 'arbitrary' && candidate.value.value.includes(from.cssVar)) {
+      if (to.utilityModifier && renameExactArbitraryVarValue({ candidate, from, to })) return true
+      if (to.utilityModifier) return false
+
       candidate.value.value = candidate.value.value.replaceAll(from.cssVar, to.cssVar)
       changed = true
     }
@@ -114,12 +127,43 @@ function renameUtilityValue(options: { candidate: Candidate; from: TokenPair; to
     }
 
     if (candidate.value.includes(from.cssVar)) {
+      if (to.utilityModifier) return false
+
       candidate.value = candidate.value.replaceAll(from.cssVar, to.cssVar)
       changed = true
     }
   }
 
   return changed
+}
+
+function renameExactArbitraryVarValue(options: { candidate: Candidate; from: TokenPair; to: TokenPair }): boolean {
+  let { candidate, from, to } = options
+  if (candidate.kind !== 'functional') return false
+  if (candidate.value?.kind !== 'arbitrary') return false
+  if (candidate.value.value !== `var(${from.cssVar})`) return false
+
+  candidate.value = { kind: 'named', value: to.utilitySuffix, fraction: null }
+  applyTargetModifier({ candidate, to })
+  return true
+}
+
+function applyTargetModifier(options: { candidate: Candidate; to: TokenPair }) {
+  let { candidate, to } = options
+  if (candidate.kind !== 'functional' || !to.utilityModifier) return
+
+  let modifier = to.utilityModifier
+  if (modifier.startsWith('[') && modifier.endsWith(']')) {
+    candidate.modifier = { kind: 'arbitrary', value: modifier.slice(1, -1) }
+    return
+  }
+
+  if (modifier.startsWith('(') && modifier.endsWith(')')) {
+    candidate.modifier = { kind: 'arbitrary', value: `var(${modifier.slice(1, -1)})` }
+    return
+  }
+
+  candidate.modifier = { kind: 'named', value: modifier }
 }
 
 function renameVariants(options: {

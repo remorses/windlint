@@ -64,28 +64,31 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
 
   let changes: FileChange[] = []
 
-  // Process CSS files
-  for (let file of cssFiles) {
-    let content = await fs.readFile(file, 'utf-8')
-    let renamed = renameCssVariables({ content, from: fromToken, to: toToken })
+  // Process CSS files. Slash targets like `color-primary/10` are Tailwind
+  // utility modifiers, not valid CSS variable names, so they are markup-only.
+  if (!toToken.utilityModifier) {
+    for (let file of cssFiles) {
+      let content = await fs.readFile(file, 'utf-8')
+      let renamed = renameCssVariables({ content, from: fromToken, to: toToken })
 
-    if (renamed !== content) {
-      let replacementCount = countDifferences({
-        original: content,
-        modified: renamed,
-        searchTerm: fromToken.cssVar,
-      })
-      let relativePath = path.relative(base, file)
-      changes.push({ file, relativePath, replacements: replacementCount })
+      if (renamed !== content) {
+        let replacementCount = countDifferences({
+          original: content,
+          modified: renamed,
+          searchTerm: fromToken.cssVar,
+        })
+        let relativePath = path.relative(base, file)
+        changes.push({ file, relativePath, replacements: replacementCount })
 
-      if (!dryRun) {
-        await fs.writeFile(file, renamed, 'utf-8')
-      }
+        if (!dryRun) {
+          await fs.writeFile(file, renamed, 'utf-8')
+        }
 
-      if (verbose) {
-        console.error(
-          `  ${pc.green('✓')} ${relativePath} (${replacementCount} replacement${replacementCount === 1 ? '' : 's'})`,
-        )
+        if (verbose) {
+          console.error(
+            `  ${pc.green('✓')} ${relativePath} (${replacementCount} replacement${replacementCount === 1 ? '' : 's'})`,
+          )
+        }
       }
     }
   }
