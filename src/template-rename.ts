@@ -10,6 +10,10 @@ import type { TokenPair } from './token.ts'
 
 type Candidate = Parameters<DesignSystem['printCandidate']>[0]
 
+export interface TemplateCandidateRenameChange extends StringChange {
+  candidate: string
+}
+
 let cachedDesignSystemKey: string | undefined
 let cachedDesignSystemPromise: Promise<DesignSystem> | undefined
 
@@ -26,37 +30,7 @@ export async function renameTemplateTokens(options: {
   to: TokenPair
 }): Promise<string> {
   let { content, extension, from, to } = options
-  let scanner = new Scanner({})
-  let candidates = scanner.getCandidatesWithPositions({ content, extension })
-  let changes: StringChange[] = []
-
-  let matchingCandidates = candidates.filter(({ candidate }) => mightContainToken({ candidate, token: from }))
-
-  if (matchingCandidates.length > 0) {
-    let designSystem = await getDesignSystem({
-      tokens: [from, to],
-      candidates: matchingCandidates.map(({ candidate }) => candidate),
-    })
-
-    for (let { candidate, position } of matchingCandidates) {
-      let replaced = renameCandidate({ rawCandidate: candidate, designSystem, from, to })
-      if (replaced === candidate) continue
-
-      // Only canonicalize when the replacement still contains the target CSS variable.
-      // This collapses e.g. text-[var(--color-pink-500)] → text-pink-500 without
-      // rewriting unrelated syntax (like [display:flex] → flex) in variant-only renames.
-      let shouldCanonicalize = replaced.includes(to.cssVar)
-      let replacement = shouldCanonicalize
-        ? designSystem.canonicalizeCandidates([replaced])[0] ?? replaced
-        : replaced
-
-      changes.push({
-        start: position,
-        end: position + candidate.length,
-        replacement,
-      })
-    }
-  }
+  let changes: StringChange[] = await findTemplateCandidateRenameChanges({ content, extension, from, to })
 
   if (!to.utilityModifier) {
     changes.push(
@@ -83,6 +57,48 @@ export async function renameTemplateTokens(options: {
 
   if (changes.length === 0) return content
   return spliceChangesIntoString(content, changes)
+}
+
+export async function findTemplateCandidateRenameChanges(options: {
+  content: string
+  extension: string
+  from: TokenPair
+  to: TokenPair
+}): Promise<TemplateCandidateRenameChange[]> {
+  let { content, extension, from, to } = options
+  let scanner = new Scanner({})
+  let candidates = scanner.getCandidatesWithPositions({ content, extension })
+  let matchingCandidates = candidates.filter(({ candidate }) => mightContainToken({ candidate, token: from }))
+  let changes: TemplateCandidateRenameChange[] = []
+
+  if (matchingCandidates.length === 0) return changes
+
+  let designSystem = await getDesignSystem({
+    tokens: [from, to],
+    candidates: matchingCandidates.map(({ candidate }) => candidate),
+  })
+
+  for (let { candidate, position } of matchingCandidates) {
+    let replaced = renameCandidate({ rawCandidate: candidate, designSystem, from, to })
+    if (replaced === candidate) continue
+
+    // Only canonicalize when the replacement still contains the target CSS variable.
+    // This collapses e.g. text-[var(--color-pink-500)] → text-pink-500 without
+    // rewriting unrelated syntax (like [display:flex] → flex) in variant-only renames.
+    let shouldCanonicalize = replaced.includes(to.cssVar)
+    let replacement = shouldCanonicalize
+      ? designSystem.canonicalizeCandidates([replaced])[0] ?? replaced
+      : replaced
+
+    changes.push({
+      candidate,
+      start: position,
+      end: position + candidate.length,
+      replacement,
+    })
+  }
+
+  return changes
 }
 
 function mightContainToken(options: { candidate: string; token: TokenPair }): boolean {

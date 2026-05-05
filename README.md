@@ -109,13 +109,13 @@ before                                              after
 └────────────────────────────────────┘              └────────────────────────────────────┘
 ```
 
-## Inline a text token
+## Inline a token
 
-Use `rename --inline` when a project token should become direct Tailwind utilities instead of
-another token. The first pass supports **text tokens** like `text-title-h1`.
+Use `inline` when a project token should become direct Tailwind utilities instead of another token.
+It supports **text**, **color**, **radius**, and other scalar Tailwind token namespaces.
 
 ```bash
-windlint rename text-title-h1 --inline
+windlint inline text-title-h1
 ```
 
 Given this token definition:
@@ -140,7 +140,7 @@ they match Tailwind defaults:
 Pass `--disable-approximation` to keep the raw values as arbitrary utilities:
 
 ```bash
-windlint rename text-title-h1 --inline --disable-approximation
+windlint inline text-title-h1 --disable-approximation
 ```
 
 ```diff
@@ -151,11 +151,23 @@ windlint rename text-title-h1 --inline --disable-approximation
 Leading and tracking are opt-in because teams often want to control those separately:
 
 ```bash
-windlint rename text-title-h1 --inline --with-leading --with-tracking
+windlint inline text-title-h1 --with-leading --with-tracking
 ```
 
-`rename --inline` currently rewrites template candidates only. CSS `@apply text-title-h1` is
-intentionally left alone for now to keep the first implementation focused and safe.
+`inline` currently rewrites template candidates only. CSS `@apply text-title-h1` is intentionally
+left alone for now to keep the first implementation focused and safe.
+
+Color and radius tokens inline to the closest built-in Tailwind token by default:
+
+```bash
+windlint inline color-brand
+windlint inline radius-card
+```
+
+```diff
+-<div class="bg-brand text-brand rounded-card">
++<div class="bg-red-500 text-red-500 rounded-xl">
+```
 
 ## Lint Tailwind classes
 
@@ -306,7 +318,7 @@ count
 ## Programmatic API
 
 ```ts
-import { countTokenUsage, formatTokenUsageTable, lint, rename } from "windlint";
+import { countTokenUsage, formatTokenUsageTable, inlineToken, lint, rename } from "windlint";
 
 await rename({
   from: "color-social-apple",
@@ -315,10 +327,9 @@ await rename({
   dryRun: true,
 });
 
-await rename({
-  from: "text-title-h1",
+await inlineToken({
+  token: "text-title-h1",
   base: "./app",
-  inline: true,
   disableApproximation: true,
 });
 

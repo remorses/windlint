@@ -4,6 +4,7 @@ import { describe, test, expect, beforeEach } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { inlineToken } from './inline.ts'
 import { rename } from './rename.ts'
 import { renameCssVariables, renameApplyDirectives } from './css-rename.ts'
 import { renameTemplateTokens } from './template-rename.ts'
@@ -604,7 +605,7 @@ describe('full project rename', () => {
   })
 })
 
-describe('rename --inline', () => {
+describe('inlineToken', () => {
   test('inlines a text token to nearest Tailwind size and named weight', async () => {
     let dir = path.join(TMP_DIR, `inline-text-project-${Date.now()}`)
     await fs.mkdir(dir, { recursive: true })
@@ -625,7 +626,7 @@ describe('rename --inline', () => {
       `<h1 class="text-title-h1 hover:text-title-h1">Title</h1>`,
     )
 
-    let result = await rename({ from: 'text-title-h1', base: dir, inline: true })
+    let result = await inlineToken({ token: 'text-title-h1', base: dir })
 
     expect(result.filesChanged).toBe(1)
     expect(result.totalReplacements).toBe(2)
@@ -654,10 +655,9 @@ describe('rename --inline', () => {
     )
     await fs.writeFile(path.join(dir, 'index.html'), `<h1 class="text-title-h1">Title</h1>`)
 
-    await rename({
-      from: 'text-title-h1',
+    await inlineToken({
+      token: 'text-title-h1',
       base: dir,
-      inline: true,
       disableApproximation: true,
       withLeading: true,
       withTracking: true,
@@ -682,11 +682,75 @@ describe('rename --inline', () => {
     )
     await fs.writeFile(path.join(dir, 'index.html'), `<h1 class="text-title-h1">Title</h1>`)
 
-    let result = await rename({ from: 'text-title-h1', base: dir, inline: true, dryRun: true })
+    let result = await inlineToken({ token: 'text-title-h1', base: dir, dryRun: true })
 
     expect(result.filesChanged).toBe(1)
     await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
       `"<h1 class=\"text-title-h1\">Title</h1>"`,
+    )
+  })
+
+  test('inlines text token arbitrary property overrides to arbitrary text utilities', async () => {
+    let dir = path.join(TMP_DIR, `inline-text-named-only-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+@theme {
+  --text-title-h1: 3.5rem;
+  --text-title-h1--font-weight: 500;
+}
+`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      `<h1 class="text-title-h1 text-[var(--text-title-h1)] [--text-title-h1:2rem] hover:[--text-title-h1:2.25rem] [font-size:var(--text-title-h1)]">Title</h1>`,
+    )
+
+    await inlineToken({ token: 'text-title-h1', base: dir })
+
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<h1 class=\"text-6xl font-medium text-[var(--text-title-h1)] text-[2rem] hover:text-[2.25rem] [font-size:var(--text-title-h1)]\">Title</h1>"`,
+    )
+  })
+
+  test('inlines color tokens to closest built-in color utilities', async () => {
+    let dir = path.join(TMP_DIR, `inline-color-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+@theme {
+  --color-brand: var(--color-red-500);
+}
+`,
+    )
+    await fs.writeFile(path.join(dir, 'index.html'), `<div class="bg-brand text-brand border-brand">Brand</div>`)
+
+    await inlineToken({ token: 'color-brand', base: dir })
+
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div class=\"bg-red-500 text-red-500 border-red-500\">Brand</div>"`,
+    )
+  })
+
+  test('inlines radius tokens to closest built-in radius utilities', async () => {
+    let dir = path.join(TMP_DIR, `inline-radius-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+@theme {
+  --radius-card: 0.7rem;
+}
+`,
+    )
+    await fs.writeFile(path.join(dir, 'index.html'), `<div class="rounded-card hover:rounded-card">Card</div>`)
+
+    await inlineToken({ token: 'radius-card', base: dir })
+
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div class=\"rounded-xl hover:rounded-xl\">Card</div>"`,
     )
   })
 })

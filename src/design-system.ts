@@ -123,5 +123,8 @@ function stripCssImports(content: string): string {
   root.walkAtRules('import', (atRule) => {
     atRule.remove()
   })
+  root.walkAtRules('apply', (atRule) => {
+    atRule.remove()
+  })
   return root.toString()
 }
