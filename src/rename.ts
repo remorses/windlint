@@ -69,6 +69,8 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
   if (!toToken.utilityModifier) {
     for (let file of cssFiles) {
       let content = await fs.readFile(file, 'utf-8')
+      if (!content.includes(fromToken.cssVar)) continue
+
       let renamed = renameCssVariables({ content, from: fromToken, to: toToken })
 
       if (renamed !== content) {
@@ -96,6 +98,8 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
   // Process template files
   for (let file of templateFiles) {
     let content = await fs.readFile(file, 'utf-8')
+    if (!mightContainTemplateToken({ content, token: fromToken })) continue
+
     let extension = getExtension(file)
     let renamed = await renameTemplateTokens({ content, extension, from: fromToken, to: toToken })
 
@@ -132,6 +136,12 @@ export async function rename(options: RenameOptions): Promise<RenameResult> {
     totalReplacements,
     changes,
   }
+}
+
+function mightContainTemplateToken(options: { content: string; token: TokenPair }): boolean {
+  let { content, token } = options
+  return content.includes(token.cssVar) ||
+    (token.utilitySuffix !== '' && content.includes(token.utilitySuffix))
 }
 
 function countDifferences(options: {

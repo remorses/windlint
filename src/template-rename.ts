@@ -14,7 +14,8 @@ type Candidate = Parameters<DesignSystem['printCandidate']>[0]
 
 const require = createRequire(import.meta.url)
 export const defaultThemeCss = fs.readFileSync(require.resolve('tailwindcss/theme.css'), 'utf-8')
-const designSystemCache = new Map<string, Promise<DesignSystem>>()
+let cachedDesignSystemKey: string | undefined
+let cachedDesignSystemPromise: Promise<DesignSystem> | undefined
 
 /**
  * Rename utility class suffixes in a template file's content.
@@ -31,29 +32,34 @@ export async function renameTemplateTokens(options: {
   let { content, extension, from, to } = options
   let scanner = new Scanner({})
   let candidates = scanner.getCandidatesWithPositions({ content, extension })
-  let designSystem = await getDesignSystem({
-    tokens: [from, to],
-    candidates: candidates.map(({ candidate }) => candidate),
-  })
   let changes: StringChange[] = []
 
-  for (let { candidate, position } of candidates) {
-    let replaced = renameCandidate({ rawCandidate: candidate, designSystem, from, to })
-    if (replaced === candidate) continue
+  let matchingCandidates = candidates.filter(({ candidate }) => mightContainToken({ candidate, token: from }))
 
-    // Only canonicalize when the replacement still contains the target CSS variable.
-    // This collapses e.g. text-[var(--color-pink-500)] → text-pink-500 without
-    // rewriting unrelated syntax (like [display:flex] → flex) in variant-only renames.
-    let shouldCanonicalize = replaced.includes(to.cssVar)
-    let replacement = shouldCanonicalize
-      ? designSystem.canonicalizeCandidates([replaced])[0] ?? replaced
-      : replaced
-
-    changes.push({
-      start: position,
-      end: position + candidate.length,
-      replacement,
+  if (matchingCandidates.length > 0) {
+    let designSystem = await getDesignSystem({
+      tokens: [from, to],
+      candidates: matchingCandidates.map(({ candidate }) => candidate),
     })
+
+    for (let { candidate, position } of matchingCandidates) {
+      let replaced = renameCandidate({ rawCandidate: candidate, designSystem, from, to })
+      if (replaced === candidate) continue
+
+      // Only canonicalize when the replacement still contains the target CSS variable.
+      // This collapses e.g. text-[var(--color-pink-500)] → text-pink-500 without
+      // rewriting unrelated syntax (like [display:flex] → flex) in variant-only renames.
+      let shouldCanonicalize = replaced.includes(to.cssVar)
+      let replacement = shouldCanonicalize
+        ? designSystem.canonicalizeCandidates([replaced])[0] ?? replaced
+        : replaced
+
+      changes.push({
+        start: position,
+        end: position + candidate.length,
+        replacement,
+      })
+    }
   }
 
   if (!to.utilityModifier) {
@@ -70,6 +76,12 @@ export async function renameTemplateTokens(options: {
 
   if (changes.length === 0) return content
   return spliceChangesIntoString(content, changes)
+}
+
+function mightContainToken(options: { candidate: string; token: TokenPair }): boolean {
+  let { candidate, token } = options
+  return candidate.includes(token.cssVar) ||
+    (token.utilitySuffix !== '' && candidate.includes(token.utilitySuffix))
 }
 
 function renameCandidate(options: {
@@ -259,16 +271,16 @@ export async function getDesignSystem(options: {
   // so canonicalizeCandidates can collapse e.g. text-[var(--color-pink-500)] → text-pink-500.
   for (let token of tokens) {
     if (!baseDs.resolveThemeValue(token.cssVar)) {
-      extraThemeVars.push(themeDeclaration(token))
+      extraThemeVars.push(`  ${token.cssVar}: ${themeValueForNamespace(token.namespace)};`)
     }
   }
 
   let key = extraThemeVars.sort().join('\n')
-  let cached = designSystemCache.get(key)
-  if (cached) return cached
+  if (cachedDesignSystemKey === key && cachedDesignSystemPromise) return cachedDesignSystemPromise
 
   let promise = __unstable__loadDesignSystem(`${defaultThemeCss}\n@theme {\n${key}\n}`)
-  designSystemCache.set(key, promise)
+  cachedDesignSystemKey = key
+  cachedDesignSystemPromise = promise
   return promise
 }
 
@@ -352,10 +364,6 @@ function isSimpleVariant(variant: string): boolean {
     if (!isAllowed) return false
   }
   return true
-}
-
-function themeDeclaration(token: TokenPair): string {
-  return `  ${token.cssVar}: ${themeValueForNamespace(token.namespace)};`
 }
 
 function themeValueForNamespace(namespace: string): string {

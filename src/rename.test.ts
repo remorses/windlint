@@ -518,6 +518,37 @@ describe('full project rename', () => {
     expect(globalsCssAfter).toBe(globalsCssBefore)
   })
 
+  test('ignores generated and internal folders', async () => {
+    let dir = path.join(TMP_DIR, `ignored-folders-project-${Date.now()}`)
+    await fs.mkdir(path.join(dir, 'dist'), { recursive: true })
+    await fs.mkdir(path.join(dir, '.git'), { recursive: true })
+    await fs.mkdir(path.join(dir, 'node_modules', 'pkg'), { recursive: true })
+    await fs.writeFile(path.join(dir, 'globals.css'), `@theme { --color-social-apple: #000; }`)
+    await fs.writeFile(path.join(dir, 'index.html'), `<div class="text-social-apple"></div>`)
+
+    let ignoredCss = `@theme { --color-social-apple: #fff; }`
+    let ignoredHtml = `<div class="text-social-apple"></div>`
+    await fs.writeFile(path.join(dir, 'dist', 'bundle.css'), ignoredCss)
+    await fs.writeFile(path.join(dir, '.git', 'snapshot.html'), ignoredHtml)
+    await fs.writeFile(path.join(dir, 'node_modules', 'pkg', 'index.html'), ignoredHtml)
+
+    await rename({
+      from: 'color-social-apple',
+      to: 'color-brand-apple',
+      base: dir,
+    })
+
+    await expect(fs.readFile(path.join(dir, 'globals.css'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"@theme { --color-brand-apple: #000; }"`,
+    )
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<div class=\"text-brand-apple\"></div>"`,
+    )
+    await expect(fs.readFile(path.join(dir, 'dist', 'bundle.css'), 'utf-8')).resolves.toBe(ignoredCss)
+    await expect(fs.readFile(path.join(dir, '.git', 'snapshot.html'), 'utf-8')).resolves.toBe(ignoredHtml)
+    await expect(fs.readFile(path.join(dir, 'node_modules', 'pkg', 'index.html'), 'utf-8')).resolves.toBe(ignoredHtml)
+  })
+
   test('slash opacity targets only rewrite markup', async () => {
     let dir = path.join(TMP_DIR, `opacity-target-project-${Date.now()}`)
     await fs.mkdir(dir, { recursive: true })

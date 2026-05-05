@@ -1,5 +1,5 @@
 // File discovery: finds all CSS and template files in a project directory.
-// Respects .gitignore and skips node_modules.
+// Respects .gitignore and skips node_modules, .git, and dist.
 
 import { globby } from 'globby'
 import path from 'node:path'
@@ -29,6 +29,7 @@ const TEMPLATE_EXTENSIONS = [
   'twig',
   'blade.php',
 ]
+const IGNORED_DIRECTORIES = ['**/node_modules/**', '**/.git/**', '**/dist/**']
 
 /**
  * Discover all relevant files in the project directory.
@@ -42,13 +43,13 @@ export async function discoverFiles(base: string): Promise<DiscoveredFiles> {
       cwd: base,
       absolute: true,
       gitignore: true,
-      ignore: ['**/node_modules/**'],
+      ignore: IGNORED_DIRECTORIES,
     }),
     globby(templateGlobs, {
       cwd: base,
       absolute: true,
       gitignore: true,
-      ignore: ['**/node_modules/**'],
+      ignore: IGNORED_DIRECTORIES,
     }),
   ])
 
