@@ -520,6 +520,45 @@ describe('full project rename', () => {
     expect(globalsCssAfter).toBe(globalsCssBefore)
   })
 
+  test('renames built-in Tailwind color utilities to a shadcn token across markup', async () => {
+    let dir = path.join(TMP_DIR, `built-in-to-shadcn-project-${Date.now()}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'globals.css'),
+      `@import 'tailwindcss';
+
+@theme inline {
+  --color-primary: var(--primary);
+}
+
+:root {
+  --primary: var(--color-red-500);
+}
+`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      `<button class="bg-red-500 text-red-500 hover:bg-red-500/80 border-red-500 text-[var(--color-red-500)]">Delete</button>\n`,
+    )
+    await fs.writeFile(
+      path.join(dir, 'button.tsx'),
+      `<button className="focus:ring-red-500 shadow-red-500/20" style={{ color: 'var(--color-red-500)' }}>Delete</button>\n`,
+    )
+
+    await rename({
+      from: 'color-red-500',
+      to: 'color-primary',
+      base: dir,
+    })
+
+    await expect(fs.readFile(path.join(dir, 'index.html'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<button class=\"bg-primary text-primary hover:bg-primary/80 border-primary text-primary\">Delete</button>\n"`,
+    )
+    await expect(fs.readFile(path.join(dir, 'button.tsx'), 'utf-8')).resolves.toMatchInlineSnapshot(
+      `"<button className=\"focus:ring-primary shadow-primary/20\" style={{ color: 'var(--color-primary)' }}>Delete</button>\n"`,
+    )
+  })
+
   test('ignores generated and internal folders', async () => {
     let dir = path.join(TMP_DIR, `ignored-folders-project-${Date.now()}`)
     await fs.mkdir(path.join(dir, 'dist'), { recursive: true })

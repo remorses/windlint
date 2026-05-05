@@ -109,6 +109,94 @@ before                                              after
 └────────────────────────────────────┘              └────────────────────────────────────┘
 ```
 
+## Convert a custom theme to shadcn tokens
+
+Use `rename` to move a project from custom semantic tokens to the **shadcn/ui token convention**.
+Create a small mapping first, then run each rename sequentially so every utility class and supported
+`var()` reference moves together.
+
+For an AlignUI-style theme, the mapping usually looks like this:
+
+| Custom token                 | shadcn token                 | Example utilities affected                       |
+| ---------------------------- | ---------------------------- | ------------------------------------------------ |
+| `color-bg-white-0`           | `color-background`           | `bg-bg-white-0` -> `bg-background`               |
+| `color-text-strong-950`      | `color-foreground`           | `text-text-strong-950` -> `text-foreground`      |
+| `color-text-sub-600`         | `color-muted-foreground`     | `text-text-sub-600` -> `text-muted-foreground`   |
+| `color-stroke-soft-200`      | `color-border`               | `border-stroke-soft-200` -> `border-border`      |
+| `color-primary-base`         | `color-primary`              | `bg-primary-base` -> `bg-primary`                |
+| `color-static-white`         | `color-primary-foreground`   | `text-static-white` -> `text-primary-foreground` |
+| `color-error-base`           | `color-destructive`          | `text-error-base` -> `text-destructive`          |
+| `color-primary-alpha-10`     | `color-primary/10`           | `bg-primary-alpha-10` -> `bg-primary/10`         |
+
+Run the commands one by one:
+
+```bash
+windlint rename color-bg-white-0 color-background
+windlint rename color-text-strong-950 color-foreground
+windlint rename color-text-sub-600 color-muted-foreground
+windlint rename color-stroke-soft-200 color-border
+windlint rename color-primary-base color-primary
+windlint rename color-static-white color-primary-foreground
+windlint rename color-error-base color-destructive
+windlint rename color-primary-alpha-10 color-primary/10
+```
+
+After renaming, replace the old theme aliases with the standard shadcn bridge. Keep `@theme inline`
+values as `var()` references so dark mode can change the underlying CSS variables at runtime:
+
+```css
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+```
+
+Then run `windlint count` to find old tokens that still exist or have no usage.
+
+## Move raw palette usage to one semantic token
+
+Use `rename` when a project already uses a built-in Tailwind color everywhere and you want that color
+to become a **specific shadcn token** across markup. For example, convert every `red-500` usage that
+represents the brand color to `primary`:
+
+```bash
+windlint rename color-red-500 color-primary --dry-run --verbose
+windlint rename color-red-500 color-primary
+```
+
+That updates normal utilities, variants, opacity modifiers, and exact arbitrary `var()` candidates:
+
+```diff
+-<button class="bg-red-500 text-red-500 hover:bg-red-500/80 border-red-500">
++<button class="bg-primary text-primary hover:bg-primary/80 border-primary">
+
+-<div class="text-[var(--color-red-500)] focus:ring-red-500">
++<div class="text-primary focus:ring-primary">
+```
+
+Keep the semantic value in CSS, then future color changes only need one variable edit:
+
+```css
+@theme inline {
+  --color-primary: var(--primary);
+}
+
+:root {
+  --primary: var(--color-red-500);
+}
+```
+
+This is intentionally broad. If only some `red-500` usages are primary, rename a narrower custom token
+instead, or review the dry run before applying the full project rewrite.
+
 ## Inline a token
 
 Use `inline` when a project token should become direct Tailwind utilities instead of another token.
