@@ -58,6 +58,18 @@ When extending this tool, prefer AST-based parsing over raw text matching:
 
 The Tailwind upgrade tool demonstrates the gold standard: it parses candidates into an AST (`designSystem.parseCandidate`), manipulates the candidate AST, then prints it back (`designSystem.printCandidate`). This avoids all regex pitfalls. For windlint, the equivalent would be parsing the candidate, checking if its root or value contains the old token, replacing at the AST level, and printing back.
 
+## Tailwind design-system rule
+
+Use Tailwind's **DesignSystem** as the source of truth for theme variables. Prefer helpers in `src/design-system.ts` over manually scanning `@theme` blocks with PostCSS.
+
+- Use `loadProjectDesignSystem()` to load project CSS with Tailwind defaults.
+- Use `designSystem.theme.entries()` / `getProjectThemeEntries()` to enumerate project theme variables.
+- Use `designSystem.theme.hasDefault(key)` to skip Tailwind built-in tokens.
+- Use `designSystem.resolveThemeValue(key)` for existence checks and default values.
+- Use PostCSS only for CSS source locations and non-theme custom properties that Tailwind does not track.
+
+Tailwind returns raw values from theme entries. If a token is `--color-primary: var(--brand)`, keep a small custom-property map for recursive `var()` resolution instead of treating PostCSS as the primary theme scanner.
+
 ## Running
 
 ```bash

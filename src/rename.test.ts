@@ -836,6 +836,7 @@ describe('countTokenUsage', () => {
       | \`--container-sidebar\` | 2 | \`sidebar\` |
       | \`--semantic-surface\` | 2 |  |
       | \`--brand-accent\` | 1 |  |
+      | \`--color-red-500\` | 1 | \`red-500\` |
       | \`--color-social-twitter\` | 1 | \`social-twitter\` |
       | \`--font-brand\` | 1 | \`brand\` |
       | \`--motion-duration\` | 1 |  |

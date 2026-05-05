@@ -1,16 +1,22 @@
 // Linting orchestration: checks Tailwind v4 candidates and CSS theme references, with optional fixes.
 
 import { Scanner } from '@tailwindcss/oxide'
-import { __unstable__loadDesignSystem } from 'tailwindcss'
 import { converter, parse as parseColor, type Oklch } from 'culori'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { parse, type Declaration } from 'postcss'
+import {
+  collectCustomPropertySources,
+  getProjectThemeEntries,
+  getThemeKeys,
+  getThemePrefixes,
+  getThemeValueMap,
+  loadProjectDesignSystem,
+  type CssVariableSource,
+  type DesignSystem,
+} from './design-system.ts'
 import { discoverFiles, getExtension } from './discover.ts'
-import { defaultThemeCss } from './template-rename.ts'
 import { spliceChangesIntoString, type StringChange } from './splice.ts'
-
-type DesignSystem = Awaited<ReturnType<typeof __unstable__loadDesignSystem>>
 
 export interface LintOptions {
   /** Project directory to lint. */
@@ -104,7 +110,8 @@ interface ThemeColor {
 export async function lint(options: LintOptions): Promise<LintResult> {
   let { cssFiles, templateFiles, designCssFiles } = await resolveLintFiles(options)
   let designSystem = await loadProjectDesignSystem(designCssFiles)
-  let themeColors = await collectProjectThemeColors(designCssFiles)
+  let customPropertySources = await collectCustomPropertySources(designCssFiles)
+  let themeColors = collectProjectThemeColors({ designSystem, customPropertySources })
   let diagnostics: LintDiagnostic[] = []
   let fixedFiles = 0
 
@@ -195,51 +202,18 @@ async function resolveLintFiles(options: LintOptions): Promise<{
   return { cssFiles, templateFiles, designCssFiles: [...new Set([...discovered.cssFiles, ...cssFiles])] }
 }
 
-async function loadProjectDesignSystem(cssFiles: string[]): Promise<DesignSystem> {
-  let css = defaultThemeCss
-
-  for (let file of cssFiles) {
-    let content = await fs.readFile(file, 'utf-8')
-    css += '\n' + stripCssImports(content)
-  }
-
-  return __unstable__loadDesignSystem(css)
-}
-
-function stripCssImports(content: string): string {
-  let root = parse(content, { from: undefined })
-  root.walkAtRules('import', (atRule) => {
-    atRule.remove()
-  })
-  return root.toString()
-}
-
-async function collectProjectThemeColors(cssFiles: string[]): Promise<ThemeColor[]> {
-  let declarations = new Map<string, string>()
-  let declarationSources = new Map<string, { file: string; content: string; start: number }>()
-  let colorVariables = new Set<string>()
-
-  for (let file of cssFiles) {
-    let content = await fs.readFile(file, 'utf-8')
-    let root = parse(content, { from: undefined })
-
-    root.walkDecls((declaration) => {
-      if (!declaration.prop.startsWith('--')) return
-      if (!declarations.has(declaration.prop)) declarations.set(declaration.prop, declaration.value.trim())
-      if (!declarationSources.has(declaration.prop)) {
-        declarationSources.set(declaration.prop, {
-          file,
-          content,
-          start: declaration.source?.start?.offset ?? 0,
-        })
-      }
-      if (declaration.prop.startsWith('--color-')) colorVariables.add(declaration.prop)
-    })
-  }
-
+function collectProjectThemeColors(options: {
+  designSystem: DesignSystem
+  customPropertySources: Map<string, CssVariableSource>
+}): ThemeColor[] {
+  let declarations = new Map([...options.customPropertySources].map(([variable, source]) => [variable, source.value]))
+  let sourceOrder = new Map([...options.customPropertySources.keys()].map((variable, index) => [variable, index]))
+  for (let [variable, value] of getThemeValueMap(options.designSystem)) declarations.set(variable, value)
   let colors: ThemeColor[] = []
-  for (let variable of colorVariables) {
-    let source = declarationSources.get(variable)
+
+  for (let { variable, value: rawValue } of getProjectThemeEntries(options.designSystem)) {
+    if (!variable.startsWith('--color-')) continue
+    let source = options.customPropertySources.get(variable)
     let value = resolveCssColorValue({ variable, declarations })
     let oklch = value ? parseOklch(value) : undefined
     if (!source || !value || !oklch) continue
@@ -248,13 +222,16 @@ async function collectProjectThemeColors(cssFiles: string[]): Promise<ThemeColor
       ...source,
       variable,
       utility: variable.slice('--color-'.length),
-      rawValue: declarations.get(variable)!,
+      rawValue,
       value,
       oklch,
     })
   }
 
-  return colors
+  return colors.sort((a, b) => {
+    return (sourceOrder.get(a.variable) ?? Number.MAX_SAFE_INTEGER) -
+      (sourceOrder.get(b.variable) ?? Number.MAX_SAFE_INTEGER)
+  })
 }
 
 function resolveCssColorValue(options: {
@@ -658,8 +635,8 @@ async function lintCssFile(options: {
 }): Promise<LintDiagnostic[]> {
   let content = await fs.readFile(options.file, 'utf-8')
   let relativePath = path.relative(options.base, options.file)
-  let themeKeys = [...options.designSystem.theme.entries()].map(([key]) => key)
-  let themePrefixes = getThemePrefixes(themeKeys)
+  let themeKeys = getThemeKeys(options.designSystem)
+  let themePrefixes = getThemePrefixes(options.designSystem)
   let diagnostics: LintDiagnostic[] = []
   let root = parse(content, { from: undefined })
 
@@ -686,15 +663,6 @@ async function lintCssFile(options: {
   })
 
   return diagnostics
-}
-
-function getThemePrefixes(themeKeys: string[]): string[] {
-  let prefixes = new Set<string>()
-  for (let key of themeKeys) {
-    let secondDash = key.indexOf('-', 2)
-    if (secondDash !== -1) prefixes.add(key.slice(0, secondDash + 1))
-  }
-  return [...prefixes]
 }
 
 function findThemeReferences(value: string): Array<{ variable: string; start: number }> {

@@ -3,17 +3,13 @@
 
 import { Scanner } from '@tailwindcss/oxide'
 import { __unstable__loadDesignSystem } from 'tailwindcss'
-import fs from 'node:fs'
-import { createRequire } from 'node:module'
 import { findCssVariableNameChanges } from './css-rename.ts'
+import { defaultThemeCss, type DesignSystem } from './design-system.ts'
 import { spliceChangesIntoString, type StringChange } from './splice.ts'
 import type { TokenPair } from './token.ts'
 
-type DesignSystem = Awaited<ReturnType<typeof __unstable__loadDesignSystem>>
 type Candidate = Parameters<DesignSystem['printCandidate']>[0]
 
-const require = createRequire(import.meta.url)
-export const defaultThemeCss = fs.readFileSync(require.resolve('tailwindcss/theme.css'), 'utf-8')
 let cachedDesignSystemKey: string | undefined
 let cachedDesignSystemPromise: Promise<DesignSystem> | undefined
 

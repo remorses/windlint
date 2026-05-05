@@ -3,11 +3,17 @@
 
 import { Scanner } from '@tailwindcss/oxide'
 import fs from 'node:fs/promises'
-import { findCssVariableNameChanges, findDeclaredCssVariables } from './css-rename.ts'
+import { findCssVariableNameChanges } from './css-rename.ts'
+import {
+  collectCustomPropertySources,
+  getProjectThemeVariables,
+  isProjectThemeVariable,
+  loadProjectDesignSystem,
+  type DesignSystem,
+} from './design-system.ts'
 import { discoverFiles, getExtension } from './discover.ts'
 import {
   candidateUsesCssVar,
-  defaultThemeCss,
   getDesignSystem,
 } from './template-rename.ts'
 import { parseToken, type TokenPair } from './token.ts'
@@ -29,11 +35,10 @@ export interface TokenUsageResult {
   rows: TokenUsageRow[]
 }
 
-const defaultCssVariables = new Set(findDeclaredCssVariables(defaultThemeCss))
-
 export async function countTokenUsage(options: CountOptions): Promise<TokenUsageResult> {
   let { cssFiles, templateFiles } = await discoverFiles(options.base)
-  let declaredVariables = await collectProjectCssVariables(cssFiles)
+  let projectDesignSystem = await loadProjectDesignSystem(cssFiles)
+  let declaredVariables = await collectProjectCssVariables({ cssFiles, designSystem: projectDesignSystem })
   let tokens = declaredVariables.map((variable) => parseToken(variable))
   let counts = new Map(tokens.map((token) => [token.cssVar, 0]))
   let templateContents = await readTemplateContents(templateFiles)
@@ -76,14 +81,17 @@ export function formatTokenUsageTable(result: TokenUsageResult): string {
   return lines.join('\n')
 }
 
-async function collectProjectCssVariables(cssFiles: string[]): Promise<string[]> {
-  let declared = new Set<string>()
+async function collectProjectCssVariables(options: {
+  cssFiles: string[]
+  designSystem: DesignSystem
+}): Promise<string[]> {
+  let declared = new Set(getProjectThemeVariables(options.designSystem))
+  let sources = await collectCustomPropertySources(options.cssFiles)
 
-  for (let file of cssFiles) {
-    let content = await fs.readFile(file, 'utf-8')
-    for (let variable of findDeclaredCssVariables(content)) {
-      if (!defaultCssVariables.has(variable)) declared.add(variable)
-    }
+  for (let variable of sources.keys()) {
+    if (isProjectThemeVariable(options.designSystem, variable)) continue
+    if (options.designSystem.theme.hasDefault(variable)) continue
+    declared.add(variable)
   }
 
   return [...declared].sort()
