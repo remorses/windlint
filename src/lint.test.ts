@@ -169,6 +169,42 @@ describe('lint', () => {
     `)
   })
 
+  test('does not report or fix partial property overlaps as conflicts', async () => {
+    let dir = await createProject('partial-overlap')
+    let file = path.join(dir, 'button.tsx')
+    await fs.writeFile(
+      file,
+      `<button className="text-sm font-normal transition-all duration-200 ease-out ring-1 ring-inset">Save</button>\n`,
+    )
+
+    let result = await lint({ base: dir, fix: true })
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.rule === 'css-conflict')).toMatchInlineSnapshot(`[]`)
+    expect(result.fixedCount).toMatchInlineSnapshot(`0`)
+    await expect(fs.readFile(file, 'utf-8')).resolves.toMatchInlineSnapshot(`
+      "<button className="text-sm font-normal transition-all duration-200 ease-out ring-1 ring-inset">Save</button>
+      "
+    `)
+  })
+
+  test('does not report or fix conflicts across different arbitrary variant contexts', async () => {
+    let dir = await createProject('arbitrary-variant-context')
+    let file = path.join(dir, 'button.tsx')
+    await fs.writeFile(
+      file,
+      `<button className="[.foo_&]:bg-red-500 [.bar_&]:bg-blue-500">Save</button>\n`,
+    )
+
+    let result = await lint({ base: dir, fix: true })
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.rule === 'css-conflict')).toMatchInlineSnapshot(`[]`)
+    expect(result.fixedCount).toMatchInlineSnapshot(`0`)
+    await expect(fs.readFile(file, 'utf-8')).resolves.toMatchInlineSnapshot(`
+      "<button className="[.foo_&]:bg-red-500 [.bar_&]:bg-blue-500">Save</button>
+      "
+    `)
+  })
+
   test('prints remaining errors after applying fixes', async () => {
     let dir = await createProject('fix-and-error')
     await fs.writeFile(path.join(dir, 'button.tsx'), `<button className="font-[700]">Save</button>\n`)

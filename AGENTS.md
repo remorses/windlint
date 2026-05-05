@@ -34,6 +34,9 @@ This tool is modeled after the **Tailwind CSS v4 upgrade CLI** (`@tailwindcss/up
 - **Oxide Scanner NAPI bindings** (Rust scanner exposed to JS):
   https://github.com/tailwindlabs/tailwindcss/blob/main/crates/node/src/lib.rs
 
+- **Tailwind CSS IntelliSense conflict diagnostics** (source for `css-conflict` semantics):
+  https://github.com/tailwindlabs/tailwindcss-intellisense/blob/main/packages/tailwindcss-language-service/src/diagnostics/getCssConflictDiagnostics.ts
+
 ## CSS parsing rule
 
 Always use **PostCSS** when changing behavior that reads or edits CSS files.
@@ -57,6 +60,17 @@ When extending this tool, prefer AST-based parsing over raw text matching:
 - For inline styles and JS string contexts, consider using a proper JS/TS parser (like the approach in Tailwind's `is-safe-migration.ts`) to verify context before replacing.
 
 The Tailwind upgrade tool demonstrates the gold standard: it parses candidates into an AST (`designSystem.parseCandidate`), manipulates the candidate AST, then prints it back (`designSystem.printCandidate`). This avoids all regex pitfalls. For windlint, the equivalent would be parsing the candidate, checking if its root or value contains the old token, replacing at the AST level, and printing back.
+
+## CSS conflict rule
+
+`css-conflict` follows Tailwind CSS IntelliSense, not a generic CSS cascade overlap check.
+
+- A conflict exists only when two utilities compile to the same number of CSS rule entries.
+- Each matching rule entry must have the same context, such as the same media query or pseudo selector.
+- Each matching rule entry must write the same full property set.
+- A partial overlap is not a safe conflict. For example, `text-sm font-normal`, `transition-all duration-200`, and `ring-1 ring-inset` overlap on one declaration but are not equivalent utilities.
+
+Only auto-fix conflicts when this full compiled shape matches. Never delete a utility just because one generated declaration overlaps with a later utility.
 
 ## Tailwind design-system rule
 

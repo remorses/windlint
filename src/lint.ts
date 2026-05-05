@@ -96,6 +96,11 @@ const COLOR_UTILITY_ROOTS = new Set([
 const toOklch = converter('oklch')
 const DUPLICATE_COLOR_DISTANCE = 0.01
 
+type CompiledRuleEntry = {
+  properties: string[]
+  context: string[]
+}
+
 interface ThemeColor {
   file: string
   content: string
@@ -426,7 +431,7 @@ function findCssConflicts(options: {
   group: { start: number; end: number; candidates: Array<{ candidate: string; position: number }> }
   designSystem: DesignSystem
 }) {
-  let seen = new Map<string, { candidate: string; position: number }>()
+  let seen: Array<{ candidate: string; position: number; entries: CompiledRuleEntry[] }> = []
   let conflicts: Array<{
     deleted: { candidate: string; position: number }
     winner: { candidate: string; position: number }
@@ -434,37 +439,40 @@ function findCssConflicts(options: {
   let deleted = new Set<number>()
 
   for (let item of options.group.candidates) {
-    for (let property of getCompiledPropertyKeys({ candidate: item.candidate, designSystem: options.designSystem })) {
-      let previous = seen.get(property)
-      if (previous && !deleted.has(previous.position)) {
-        conflicts.push({ deleted: previous, winner: item })
-        deleted.add(previous.position)
-      }
-      seen.set(property, item)
+    let entries = getCompiledRuleEntries({ candidate: item.candidate, designSystem: options.designSystem })
+
+    for (let previous of seen) {
+      if (deleted.has(previous.position)) continue
+      if (!compiledEntriesConflict(previous.entries, entries)) continue
+
+      conflicts.push({ deleted: previous, winner: item })
+      deleted.add(previous.position)
     }
+
+    seen.push({ ...item, entries })
   }
 
   return conflicts
 }
 
-function getCompiledPropertyKeys(options: { candidate: string; designSystem: DesignSystem }): string[] {
-  let keys = new Set<string>()
+function getCompiledRuleEntries(options: { candidate: string; designSystem: DesignSystem }): CompiledRuleEntry[] {
+  let entries: CompiledRuleEntry[] = []
   for (let parsedCandidate of options.designSystem.parseCandidate(options.candidate)) {
     for (let { node } of options.designSystem.compileAstNodes(parsedCandidate)) {
-      collectDeclarationKeys({ node, context: [], keys })
+      collectRuleEntries({ node, context: [], entries })
     }
   }
-  return [...keys]
+  return entries
 }
 
-function collectDeclarationKeys(options: {
+function collectRuleEntries(options: {
   node: ReturnType<DesignSystem['compileAstNodes']>[number]['node']
   context: string[]
-  keys: Set<string>
+  entries: CompiledRuleEntry[]
 }) {
-  let { node, context, keys } = options
+  let { node, context, entries } = options
   if (node.kind === 'declaration') {
-    if (!node.property.startsWith('--')) keys.add(`${context.join('|')}::${node.property}::${node.important}`)
+    entries.push({ context, properties: [declarationPropertyKey(node)] })
     return
   }
 
@@ -484,7 +492,48 @@ function collectDeclarationKeys(options: {
       return
   }
 
-  for (let child of node.nodes) collectDeclarationKeys({ node: child, context: nextContext, keys })
+  let properties = node.nodes
+    .filter((child) => child.kind === 'declaration')
+    .map((child) => declarationPropertyKey(child))
+
+  if (properties.length > 0) entries.push({ context: nextContext, properties })
+
+  for (let child of node.nodes) {
+    if (child.kind !== 'declaration') collectRuleEntries({ node: child, context: nextContext, entries })
+  }
+}
+
+function declarationPropertyKey(node: Extract<ReturnType<DesignSystem['compileAstNodes']>[number]['node'], { kind: 'declaration' }>): string {
+  return `${node.property}::${node.important}`
+}
+
+function compiledEntriesConflict(left: CompiledRuleEntry[], right: CompiledRuleEntry[]): boolean {
+  if (left.length !== right.length) return false
+
+  let hasComparableProperties = false
+  for (let index = 0; index < left.length; index++) {
+    let leftEntry = left[index]!
+    let rightEntry = right[index]!
+
+    if (leftEntry.properties.length !== rightEntry.properties.length) return false
+    if (leftEntry.context.length !== rightEntry.context.length) return false
+    if (!equalSorted(leftEntry.properties, rightEntry.properties)) return false
+    if (!equalSorted(leftEntry.context, rightEntry.context)) return false
+    if (leftEntry.properties.length > 0) hasComparableProperties = true
+  }
+
+  return hasComparableProperties
+}
+
+function equalSorted(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+
+  let sortedLeft = left.toSorted()
+  let sortedRight = right.toSorted()
+  for (let index = 0; index < sortedLeft.length; index++) {
+    if (sortedLeft[index] !== sortedRight[index]) return false
+  }
+  return true
 }
 
 function getThemeColorSuggestion(options: {
